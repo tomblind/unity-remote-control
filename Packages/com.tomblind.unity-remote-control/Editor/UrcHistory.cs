@@ -26,41 +26,58 @@ namespace Urc.Editor
         /// <summary>Enough to answer "what just happened" without turning the window into a log viewer.</summary>
         private const int Limit = 25;
 
-        /// <summary>Snippets are unbounded; the window shows a recognisable prefix, not the source.</summary>
-        private const int MaxDetailChars = 80;
+        /// <summary>Collapsed rows show a recognisable prefix; the full text lives in the entry.</summary>
+        private const int SummaryChars = 80;
+
+        /// <summary>
+        /// Per-field cap on the retained text. This is held in SessionState — editor memory, not a
+        /// database — so a snippet that returns a megabyte must not park it there for the session.
+        /// Generous enough that a realistic request and result survive intact.
+        /// </summary>
+        private const int MaxRetainedChars = 8 * 1024;
 
         public sealed class Entry
         {
             public string JobId;
             public string Cmd;
             public string Status;
-            public string Detail;
             public string FinishedAtUtc;
             public int DurationMs;
             public int Generation;
             public int ClientPid;
+
+            /// <summary>What was asked for, in full — the snippet source for an exec.</summary>
+            public string Request;
+
+            /// <summary>What came back, in full — the value, or the failure and its summary.</summary>
+            public string Response;
+
+            /// <summary>One-line prefix of the request, for the collapsed row.</summary>
+            public string Summary => Flatten(Request, SummaryChars);
 
             public Json ToJson() =>
                 Json.Object()
                     .Set("jobId", JobId)
                     .Set("cmd", Cmd)
                     .Set("status", Status)
-                    .SetIf("detail", Detail)
                     .SetIf("finishedAt", FinishedAtUtc)
                     .Set("durationMs", DurationMs)
                     .Set("generation", Generation)
-                    .Set("clientPid", ClientPid);
+                    .Set("clientPid", ClientPid)
+                    .SetIf("request", Request)
+                    .SetIf("response", Response);
 
             public static Entry FromJson(Json json) => new Entry
             {
                 JobId = json["jobId"].AsString(""),
                 Cmd = json["cmd"].AsString(""),
                 Status = json["status"].AsString(""),
-                Detail = json["detail"].AsString(),
                 FinishedAtUtc = json["finishedAt"].AsString(),
                 DurationMs = json["durationMs"].AsInt(),
                 Generation = json["generation"].AsInt(),
                 ClientPid = json["clientPid"].AsInt(),
+                Request = json["request"].AsString(),
+                Response = json["response"].AsString(),
             };
         }
 
@@ -73,11 +90,12 @@ namespace Urc.Editor
                 JobId = job.Id,
                 Cmd = job.Cmd,
                 Status = job.Status ?? UrcProtocol.Status.Interrupted,
-                Detail = Shorten(job.Detail),
                 FinishedAtUtc = job.FinishedAtUtc,
                 DurationMs = Duration(job),
                 Generation = job.FinishedGeneration != 0 ? job.FinishedGeneration : job.StartedGeneration,
                 ClientPid = job.ClientPid,
+                Request = Cap(job.Detail),
+                Response = Cap(Describe(job)),
             };
 
             var entries = Recent();
@@ -117,15 +135,41 @@ namespace Urc.Editor
             return ms <= 0 || ms > int.MaxValue ? 0 : (int)ms;
         }
 
-        /// <summary>Collapses a snippet to one recognisable line — newlines would break the row layout.</summary>
-        private static string Shorten(string detail)
+        /// <summary>Renders what came back, in the shape a person wants to read or copy.</summary>
+        private static string Describe(UrcJob job)
         {
-            if (string.IsNullOrEmpty(detail)) return null;
+            var parts = new List<string>();
 
-            var flat = detail.Replace("\r", " ").Replace("\n", " ").Replace("\t", " ").Trim();
+            if (job.Value != null && !job.Value.IsNull)
+            {
+                parts.Add(job.Value.ValueKind == Json.Kind.String
+                    ? job.Value.AsString()
+                    : job.Value.ToString());
+            }
+
+            if (!string.IsNullOrEmpty(job.Summary)) parts.Add(job.Summary);
+            if (!string.IsNullOrEmpty(job.ValueArtifact)) parts.Add("full value: " + job.ValueArtifact);
+
+            return parts.Count == 0 ? "(no value)" : string.Join("\n", parts.ToArray());
+        }
+
+        private static string Cap(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+            return text.Length <= MaxRetainedChars
+                ? text
+                : text.Substring(0, MaxRetainedChars) + $"\n… <{text.Length} chars, truncated>";
+        }
+
+        /// <summary>Collapses text to one recognisable line — newlines would break the row layout.</summary>
+        private static string Flatten(string text, int max)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+
+            var flat = text.Replace("\r", " ").Replace("\n", " ").Replace("\t", " ").Trim();
             while (flat.Contains("  ")) flat = flat.Replace("  ", " ");
 
-            return flat.Length <= MaxDetailChars ? flat : flat.Substring(0, MaxDetailChars) + "…";
+            return flat.Length <= max ? flat : flat.Substring(0, max) + "…";
         }
     }
 }

@@ -180,7 +180,11 @@ namespace Urc.Editor
                     ? tie.InnerException
                     : ex;
 
-                Debug.LogError($"[urc] snippet threw: {inner}");
+                // NOT $"{inner}" — Exception.ToString() embeds the full stack in the MESSAGE, which
+                // sails straight past the trimming applied to Unity's own stack field and puts ~25
+                // frames of Roslyn submission machinery back into the log. Trim it here instead.
+                Debug.LogError($"[urc] snippet threw: {inner.GetType().Name}: {inner.Message}\n" +
+                               UrcLog.TrimStack(inner.StackTrace));
 
                 return new Attempt
                 {

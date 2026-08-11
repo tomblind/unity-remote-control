@@ -1,5 +1,5 @@
 using System;
-using System.Diagnostics;
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -135,49 +135,134 @@ namespace Urc.Editor
                 return;
             }
 
-            using var scroll = new EditorGUILayout.ScrollViewScope(_historyScroll, GUILayout.MinHeight(90));
+            using var scroll = new EditorGUILayout.ScrollViewScope(_historyScroll, GUILayout.MinHeight(120));
             _historyScroll = scroll.scrollPosition;
 
             for (var i = entries.Count - 1; i >= 0; i--)
             {
                 var entry = entries[i];
+                var expanded = _expanded.Contains(entry.JobId);
 
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    var previous = GUI.color;
-                    GUI.color = ColorFor(entry.Status);
-                    EditorGUILayout.LabelField(Glyph(entry.Status), GUILayout.Width(14));
-                    GUI.color = previous;
+                    // A button rather than EditorGUILayout.Foldout: Foldout accepts no layout
+                    // options, so it claims the rest of the line and shoves every other column off
+                    // the row. A fixed-width button gives exact control.
+                    if (GUILayout.Button(expanded ? "▼" : "▶", EditorStyles.label, GUILayout.Width(14)))
+                    {
+                        if (expanded) _expanded.Remove(entry.JobId);
+                        else _expanded.Add(entry.JobId);
+                    }
 
+                    EditorGUILayout.LabelField(Glyph(entry.Status), StatusStyle(entry.Status), GUILayout.Width(16));
                     EditorGUILayout.LabelField(entry.Cmd, EditorStyles.miniLabel, GUILayout.Width(56));
                     EditorGUILayout.LabelField(Age(entry.FinishedAtUtc), EditorStyles.miniLabel, GUILayout.Width(52));
                     EditorGUILayout.LabelField($"{entry.DurationMs} ms", EditorStyles.miniLabel, GUILayout.Width(62));
-
-                    // Selectable so a snippet can be copied back out and re-run by hand.
-                    EditorGUILayout.SelectableLabel(entry.Detail ?? "",
-                        EditorStyles.miniLabel, GUILayout.Height(EditorGUIUtility.singleLineHeight));
+                    EditorGUILayout.LabelField(entry.Summary, EditorStyles.miniLabel);
                 }
+
+                if (expanded) DrawExpanded(entry);
             }
         }
+
+        private readonly HashSet<string> _expanded = new HashSet<string>();
+
+        private void DrawExpanded(UrcHistory.Entry entry)
+        {
+            using (new EditorGUI.IndentLevelScope())
+            {
+                DrawPane("Request", entry.Request);
+                DrawPane("Response", entry.Response);
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUILayout.LabelField($"job {entry.JobId} · gen {entry.Generation} · client pid {entry.ClientPid}",
+                        EditorStyles.miniLabel);
+                }
+            }
+            EditorGUILayout.Space(4);
+        }
+
+        /// <summary>
+        /// A read-only, scrollable, selectable text pane with a copy button.
+        ///
+        /// TextArea rather than SelectableLabel because selection survives the repaint this window
+        /// does every tick — a SelectableLabel loses it, which makes manual selection impossible on
+        /// a live-updating window. The copy button exists for the same reason: it is the reliable
+        /// path when the text is long.
+        /// </summary>
+        private static void DrawPane(string label, string text)
+        {
+            var content = string.IsNullOrEmpty(text) ? "(empty)" : text;
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField(label, EditorStyles.miniBoldLabel, GUILayout.Width(70));
+                if (GUILayout.Button("Copy", EditorStyles.miniButton, GUILayout.Width(44)))
+                {
+                    EditorGUIUtility.systemCopyBuffer = content;
+                    ShowNotice($"{label} copied");
+                }
+            }
+
+            var lines = Mathf.Clamp(content.Split('\n').Length, 1, 12);
+            var height = lines * EditorGUIUtility.singleLineHeight + 6;
+
+            // Read-only by discarding the result: editable-looking text the user cannot actually
+            // change would be worse than a pane that is obviously inert.
+            EditorGUILayout.TextArea(content, MonoStyle, GUILayout.Height(height));
+        }
+
+        private static void ShowNotice(string message)
+        {
+            var window = focusedWindow;
+            if (window != null) window.ShowNotification(new GUIContent(message), 1.0);
+        }
+
+        private static GUIStyle _monoStyle;
+
+        private static GUIStyle MonoStyle =>
+            _monoStyle ??= new GUIStyle(EditorStyles.textArea)
+            {
+                font = EditorStyles.miniLabel.font,
+                wordWrap = false,
+                richText = false,
+            };
 
         private static string Glyph(string status)
         {
             switch (status)
             {
-                case UrcProtocol.Status.Ok: return "✓";
+                case UrcProtocol.Status.Ok: return "✔";
                 case UrcProtocol.Status.Interrupted: return "~";
-                default: return "✕";
+                default: return "✖";
             }
         }
 
-        private static Color ColorFor(string status)
+        // Cached styles with an explicit textColor. GUI.color does NOT reliably tint label text —
+        // the editor skin's own normal.textColor wins — which is why the glyphs rendered plain.
+        private static GUIStyle _okStyle, _failStyle, _warnStyle;
+
+        private static GUIStyle StatusStyle(string status)
         {
             switch (status)
             {
-                case UrcProtocol.Status.Ok: return new Color(0.4f, 0.8f, 0.4f);
-                case UrcProtocol.Status.Interrupted: return new Color(0.9f, 0.75f, 0.3f);
-                default: return new Color(0.9f, 0.45f, 0.45f);
+                case UrcProtocol.Status.Ok:
+                    return _okStyle ??= Tinted(new Color(0.35f, 0.78f, 0.38f));
+                case UrcProtocol.Status.Interrupted:
+                    return _warnStyle ??= Tinted(new Color(0.92f, 0.73f, 0.25f));
+                default:
+                    return _failStyle ??= Tinted(new Color(0.90f, 0.40f, 0.40f));
             }
+        }
+
+        private static GUIStyle Tinted(Color color)
+        {
+            var style = new GUIStyle(EditorStyles.boldLabel);
+            style.normal.textColor = color;
+            style.hover.textColor = color;
+            style.focused.textColor = color;
+            return style;
         }
 
         /// <summary>Relative time, because "38s ago" answers "was that mine?" and a timestamp does not.</summary>
