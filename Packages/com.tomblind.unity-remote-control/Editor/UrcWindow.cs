@@ -33,8 +33,24 @@ namespace Urc.Editor
 
         private void OnDisable() => EditorApplication.update -= Repaint;
 
+        /// <summary>
+        /// Height of the history list, measured from the window rect rather than left to the layout
+        /// system. `GUILayout.ExpandHeight(true)` does not distribute the leftover space here, so the
+        /// list sat at its minimum with the rest of the window empty below it.
+        ///
+        /// Applied only on the Layout event. IMGUI runs Layout then Repaint over the same frame, and
+        /// feeding a different size to each half throws "GUILayout mismatched" errors — so a fresh
+        /// measurement taken during Repaint lands on the NEXT frame, never mid-frame.
+        /// </summary>
+        private float _historyHeight = 140;
+        private float _measuredHistoryHeight = 140;
+
+        private const float MinHistoryHeight = 80;
+
         private void OnGUI()
         {
+            if (Event.current.type == EventType.Layout) _historyHeight = _measuredHistoryHeight;
+
             EditorGUILayout.Space(4);
 
             var running = UrcServer.IsRunning;
@@ -128,6 +144,14 @@ namespace Urc.Editor
                     UrcHistory.Clear();
             }
 
+            // Measure the space left below this header. Repaint is the only event with real rects;
+            // the value is stored for the next frame's Layout pass (see _historyHeight).
+            if (Event.current.type == EventType.Repaint)
+            {
+                var header = GUILayoutUtility.GetLastRect();
+                _measuredHistoryHeight = Mathf.Max(MinHistoryHeight, position.height - header.yMax - 8);
+            }
+
             var entries = UrcHistory.Recent();
             if (entries.Count == 0)
             {
@@ -135,11 +159,8 @@ namespace Urc.Editor
                 return;
             }
 
-            // Fills whatever is left of the window rather than sitting at a fixed height. History is
-            // the part that grows, so it should get the space; MinHeight keeps it usable when the
-            // window is dragged short, and ExpandHeight claims the rest when it is not.
             using var scroll = new EditorGUILayout.ScrollViewScope(
-                _historyScroll, GUILayout.MinHeight(80), GUILayout.ExpandHeight(true));
+                _historyScroll, GUILayout.Height(_historyHeight));
             _historyScroll = scroll.scrollPosition;
 
             for (var i = entries.Count - 1; i >= 0; i--)
