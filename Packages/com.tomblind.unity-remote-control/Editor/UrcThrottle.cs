@@ -5,7 +5,7 @@ using System.Threading;
 using UnityEditor;
 using UnityEngine;
 
-namespace Sunblink.Urc.Editor
+namespace Urc.Editor
 {
     /// <summary>
     /// Suspends Unity's editor throttling while a job is in flight.
@@ -28,8 +28,8 @@ namespace Sunblink.Urc.Editor
     /// </summary>
     internal static class UrcThrottle
     {
-        private const string BackupKey = "Sunblink.Urc.Shared.InteractionModeBackup";
-        private const string OwnersKey = "Sunblink.Urc.Shared.ThrottleOwners";
+        private const string BackupKey = "Urc.Shared.InteractionModeBackup";
+        private const string OwnersKey = "Urc.Shared.ThrottleOwners";
 
         /// <summary>The editor-global Interaction Mode preference. 1 = "No Throttling".</summary>
         private const string InteractionModePrefKey = "InteractionMode";

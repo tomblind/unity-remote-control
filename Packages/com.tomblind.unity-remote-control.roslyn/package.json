@@ -1,0 +1,15 @@
+{
+  "name": "com.tomblind.unity-remote-control.roslyn",
+  "version": "0.1.0",
+  "displayName": "Unity Remote Control — Bundled Roslyn",
+  "description": "Roslyn 4.9.2 compiler DLLs used by com.tomblind.unity-remote-control's exec command. Install this ONLY if your project does not already provide Roslyn (Microsoft.CodeAnalysis.*) — two copies cause duplicate-assembly errors. The server names no Roslyn assembly, so it compiles against whichever copy is present.",
+  "unity": "2021.3",
+  "author": {
+    "name": "tomblind"
+  },
+  "keywords": [
+    "roslyn",
+    "editor",
+    "automation"
+  ]
+}

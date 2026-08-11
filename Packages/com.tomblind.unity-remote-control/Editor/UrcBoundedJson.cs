@@ -3,9 +3,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
-using Sunblink.Urc.Protocol;
+using Urc.Protocol;
 
-namespace Sunblink.Urc.Editor
+namespace Urc.Editor
 {
     /// <summary>
     /// Projects an arbitrary returned object into bounded JSON.

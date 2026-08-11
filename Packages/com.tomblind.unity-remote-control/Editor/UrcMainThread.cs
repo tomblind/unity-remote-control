@@ -7,7 +7,7 @@ using UnityEditor;
 using UnityEditorInternal;
 using UnityEngine;
 
-namespace Sunblink.Urc.Editor
+namespace Urc.Editor
 {
     /// <summary>
     /// Pumps work from the connection thread onto the editor main thread, and keeps an unfocused

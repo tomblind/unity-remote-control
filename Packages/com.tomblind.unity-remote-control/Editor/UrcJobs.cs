@@ -2,7 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading;
 
-namespace Sunblink.Urc.Editor
+namespace Urc.Editor
 {
     /// <summary>
     /// In-memory view of jobs, so the connection thread never touches Unity.

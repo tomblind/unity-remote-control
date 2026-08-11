@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Sunblink.Urc.Discovery;
-using Sunblink.Urc.Protocol;
+using Urc.Discovery;
+using Urc.Protocol;
 
-namespace Sunblink.Urc
+namespace Urc
 {
     /// <summary>
     /// Reads the editor's captured console straight off disk.

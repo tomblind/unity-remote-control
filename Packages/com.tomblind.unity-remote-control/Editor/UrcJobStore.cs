@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using UnityEditor;
-using Sunblink.Urc.Protocol;
+using Urc.Protocol;
 
-namespace Sunblink.Urc.Editor
+namespace Urc.Editor
 {
     /// <summary>
     /// Durable job state, held in Unity's <see cref="SessionState"/>.

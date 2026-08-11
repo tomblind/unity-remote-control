@@ -36,8 +36,8 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $SourceRoot   = $PSScriptRoot
-$PackageDir   = Join-Path $SourceRoot 'Packages\com.sunblink.unity-remote-control'
-$RoslynDir    = Join-Path $SourceRoot 'Packages\com.sunblink.unity-remote-control.roslyn\Plugins\Roslyn'
+$PackageDir   = Join-Path $SourceRoot 'Packages\com.tomblind.unity-remote-control'
+$RoslynDir    = Join-Path $SourceRoot 'Packages\com.tomblind.unity-remote-control.roslyn\Plugins\Roslyn'
 $SkillFile    = Join-Path $SourceRoot 'skill\SKILL.md'
 $CliBinary    = Join-Path $SourceRoot 'cli\bin\Release\net10.0\win-x64\publish\urc.exe'
 
@@ -291,9 +291,9 @@ Write-Host "Installing urc into $project" -ForegroundColor Cyan
 # Refuse the one configuration that produces duplicate types: a project that already references the
 # package through UPM would end up compiling two copies of every class.
 $manifestJson = Join-Path $project 'Packages\manifest.json'
-if ((Test-Path $manifestJson) -and ((Get-Content $manifestJson -Raw) -match 'com\.sunblink\.unity-remote-control')) {
+if ((Test-Path $manifestJson) -and ((Get-Content $manifestJson -Raw) -match 'com\.tomblind\.unity-remote-control')) {
     if (-not $Force) {
-        Fail ("this project already references com.sunblink.unity-remote-control in Packages/manifest.json.`n" +
+        Fail ("this project already references com.tomblind.unity-remote-control in Packages/manifest.json.`n" +
               "  Assets-mode on top of that would compile two copies of every type.`n" +
               "  Remove the manifest entry first, or pass -Force if you know what you are doing.")
     }

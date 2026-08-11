@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using Sunblink.Urc.Discovery;
-using Sunblink.Urc.Protocol;
+using Urc.Discovery;
+using Urc.Protocol;
 
-namespace Sunblink.Urc
+namespace Urc
 {
     public static class ExitCode
     {

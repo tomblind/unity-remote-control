@@ -4,7 +4,7 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>urc</AssemblyName>
-    <RootNamespace>Sunblink.Urc</RootNamespace>
+    <RootNamespace>Urc</RootNamespace>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
@@ -38,7 +38,7 @@
     These files must stay C# 9 / netstandard2.1 clean — Unity 2021.3 is the constraint, not net10.0.
   -->
   <ItemGroup>
-    <Compile Include="..\Packages\com.sunblink.unity-remote-control\Editor\Protocol\**\*.cs"
+    <Compile Include="..\Packages\com.tomblind.unity-remote-control\Editor\Protocol\**\*.cs"
              LinkBase="Protocol" />
   </ItemGroup>
 

@@ -4,9 +4,9 @@ using System.IO;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
-using Sunblink.Urc.Protocol;
+using Urc.Protocol;
 
-namespace Sunblink.Urc
+namespace Urc
 {
     /// <summary>A live TCP connection to one editor, framed as NDJSON.</summary>
     internal sealed class EditorConnection : IDisposable

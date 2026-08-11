@@ -1,6 +1,6 @@
 {
-    "name": "Sunblink.Urc.Editor",
-    "rootNamespace": "Sunblink.Urc",
+    "name": "Urc.Editor",
+    "rootNamespace": "Urc",
     "references": [],
     "includePlatforms": [
         "Editor"

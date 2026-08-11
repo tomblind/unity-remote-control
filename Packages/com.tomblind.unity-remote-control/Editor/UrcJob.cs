@@ -1,7 +1,7 @@
 using System;
-using Sunblink.Urc.Protocol;
+using Urc.Protocol;
 
-namespace Sunblink.Urc.Editor
+namespace Urc.Editor
 {
     internal enum UrcJobState
     {
@@ -53,6 +53,13 @@ namespace Sunblink.Urc.Editor
 
         /// <summary>Path to the full value when it was too large to inline.</summary>
         public string ValueArtifact;
+
+        /// <summary>
+        /// What was asked for, in human terms — the snippet source for an exec. Shown in the editor
+        /// window's history so a person can see what an agent actually ran. Not journalled: it is
+        /// only meaningful live, and snippets can be large.
+        /// </summary>
+        [NonSerialized] public string Detail;
 
         public bool IsTerminal => State == UrcJobState.Done || State == UrcJobState.Interrupted;
 

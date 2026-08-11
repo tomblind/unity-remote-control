@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 
-namespace Sunblink.Urc.Protocol
+namespace Urc.Protocol
 {
     /// <summary>
     /// Minimal dependency-free JSON model, parser and writer.

@@ -3,9 +3,9 @@ using System.Diagnostics;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
-using Sunblink.Urc.Protocol;
+using Urc.Protocol;
 
-namespace Sunblink.Urc.Editor
+namespace Urc.Editor
 {
     /// <summary>
     /// A read-only status window: Window ▸ Unity Remote Control.
@@ -103,6 +103,93 @@ namespace Sunblink.Urc.Editor
             EditorGUILayout.LabelField("Drive this editor from the project root:", EditorStyles.miniLabel);
             EditorGUILayout.SelectableLabel(".urc/urc exec --code 'return 2+2;'",
                 EditorStyles.textField, GUILayout.Height(EditorGUIUtility.singleLineHeight));
+
+            DrawHistory();
+        }
+
+        private Vector2 _historyScroll;
+
+        /// <summary>
+        /// Recent requests, newest first.
+        ///
+        /// This is the part of the window that answers questions nothing else can. When an agent is
+        /// driving, things change in your project that you did not do — and without a visible record,
+        /// "why did my scene move?" or "is anything even connected?" have no answer short of reading
+        /// a log file.
+        /// </summary>
+        private void DrawHistory()
+        {
+            EditorGUILayout.Space(8);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField("Recent requests", EditorStyles.boldLabel);
+                if (GUILayout.Button("Clear", EditorStyles.miniButton, GUILayout.Width(50)))
+                    UrcHistory.Clear();
+            }
+
+            var entries = UrcHistory.Recent();
+            if (entries.Count == 0)
+            {
+                EditorGUILayout.LabelField("nothing yet this session", EditorStyles.miniLabel);
+                return;
+            }
+
+            using var scroll = new EditorGUILayout.ScrollViewScope(_historyScroll, GUILayout.MinHeight(90));
+            _historyScroll = scroll.scrollPosition;
+
+            for (var i = entries.Count - 1; i >= 0; i--)
+            {
+                var entry = entries[i];
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    var previous = GUI.color;
+                    GUI.color = ColorFor(entry.Status);
+                    EditorGUILayout.LabelField(Glyph(entry.Status), GUILayout.Width(14));
+                    GUI.color = previous;
+
+                    EditorGUILayout.LabelField(entry.Cmd, EditorStyles.miniLabel, GUILayout.Width(56));
+                    EditorGUILayout.LabelField(Age(entry.FinishedAtUtc), EditorStyles.miniLabel, GUILayout.Width(52));
+                    EditorGUILayout.LabelField($"{entry.DurationMs} ms", EditorStyles.miniLabel, GUILayout.Width(62));
+
+                    // Selectable so a snippet can be copied back out and re-run by hand.
+                    EditorGUILayout.SelectableLabel(entry.Detail ?? "",
+                        EditorStyles.miniLabel, GUILayout.Height(EditorGUIUtility.singleLineHeight));
+                }
+            }
+        }
+
+        private static string Glyph(string status)
+        {
+            switch (status)
+            {
+                case UrcProtocol.Status.Ok: return "✓";
+                case UrcProtocol.Status.Interrupted: return "~";
+                default: return "✕";
+            }
+        }
+
+        private static Color ColorFor(string status)
+        {
+            switch (status)
+            {
+                case UrcProtocol.Status.Ok: return new Color(0.4f, 0.8f, 0.4f);
+                case UrcProtocol.Status.Interrupted: return new Color(0.9f, 0.75f, 0.3f);
+                default: return new Color(0.9f, 0.45f, 0.45f);
+            }
+        }
+
+        /// <summary>Relative time, because "38s ago" answers "was that mine?" and a timestamp does not.</summary>
+        private static string Age(string finishedAtUtc)
+        {
+            if (!DateTime.TryParse(finishedAtUtc, out var finished)) return "";
+
+            var elapsed = DateTime.UtcNow - finished.ToUniversalTime();
+            if (elapsed.TotalSeconds < 1) return "now";
+            if (elapsed.TotalSeconds < 60) return $"{(int)elapsed.TotalSeconds}s ago";
+            if (elapsed.TotalMinutes < 60) return $"{(int)elapsed.TotalMinutes}m ago";
+            return $"{(int)elapsed.TotalHours}h ago";
         }
 
         private static void Row(string label, string value)

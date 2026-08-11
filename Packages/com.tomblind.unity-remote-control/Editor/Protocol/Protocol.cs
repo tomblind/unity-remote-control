@@ -1,6 +1,6 @@
 using System;
 
-namespace Sunblink.Urc.Protocol
+namespace Urc.Protocol
 {
     /// <summary>
     /// Wire constants shared by the CLI and the Unity package. This file is compiled into both, so a

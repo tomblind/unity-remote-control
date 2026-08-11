@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Text;
 
-namespace Sunblink.Urc.Protocol
+namespace Urc.Protocol
 {
     /// <summary>
     /// Where logs and artifacts live. Shared, because the CLI reads files the editor writes.

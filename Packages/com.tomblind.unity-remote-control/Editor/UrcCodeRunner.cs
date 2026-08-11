@@ -11,14 +11,14 @@ using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 using Microsoft.CodeAnalysis.Scripting.Hosting;
 using UnityEngine;
-using Sunblink.Urc.Protocol;
+using Urc.Protocol;
 
-namespace Sunblink.Urc.Editor
+namespace Urc.Editor
 {
     /// <summary>
     /// Evaluates C# on the editor main thread via Roslyn scripting.
     ///
-    /// Requires Roslyn to be present — either the optional com.sunblink.unity-remote-control.roslyn
+    /// Requires Roslyn to be present — either the optional com.tomblind.unity-remote-control.roslyn
     /// package or the project's own copy. This code names no specific Roslyn assembly, so it binds to
     /// whichever is loaded; but it does not compile with none.
     /// </summary>

@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using Sunblink.Urc.Protocol;
+using Urc.Protocol;
 
-namespace Sunblink.Urc
+namespace Urc
 {
     /// <summary>
     /// Works out which Unity project a command is aimed at, and matches it against the editors that

@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
-using Sunblink.Urc.Discovery;
-using Sunblink.Urc.Protocol;
+using Urc.Discovery;
+using Urc.Protocol;
 
-namespace Sunblink.Urc
+namespace Urc
 {
     /// <summary>
     /// Runs C# in the editor and blocks until the real answer arrives — across domain reloads,

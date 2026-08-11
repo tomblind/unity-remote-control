@@ -4,9 +4,9 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using Sunblink.Urc.Protocol;
+using Urc.Protocol;
 
-namespace Sunblink.Urc.Discovery
+namespace Urc.Discovery
 {
     /// <summary>
     /// Finds running editors by multicast query.

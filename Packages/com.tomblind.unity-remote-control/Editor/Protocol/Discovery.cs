@@ -1,7 +1,7 @@
 using System;
 using System.Text;
 
-namespace Sunblink.Urc.Protocol
+namespace Urc.Protocol
 {
     /// <summary>
     /// Sent by the CLI to the multicast group. Every running editor replies unicast to the query's

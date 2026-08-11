@@ -24,7 +24,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\Packages\com.sunblink.unity-remote-control\Editor\**\*.cs" LinkBase="Package" />
+    <Compile Include="..\..\Packages\com.tomblind.unity-remote-control\Editor\**\*.cs" LinkBase="Package" />
   </ItemGroup>
 
   <ItemGroup>
@@ -45,7 +45,7 @@
     the optional package nor its own Roslyn will not compile the editor package.
   -->
   <PropertyGroup>
-    <RoslynDir>..\..\Packages\com.sunblink.unity-remote-control.roslyn\Plugins\Roslyn</RoslynDir>
+    <RoslynDir>..\..\Packages\com.tomblind.unity-remote-control.roslyn\Plugins\Roslyn</RoslynDir>
   </PropertyGroup>
 
   <ItemGroup>

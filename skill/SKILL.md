@@ -129,4 +129,4 @@ return (CONDITION) ? "met" : "timeout";
 - `urc logs` reads the log file directly with no editor involved, so it still answers when the
   editor is wedged or has crashed — provided the output happened during a command. A crash outside
   one leaves nothing here; Unity's `Editor.log` has it.
-- "no editor running for &lt;path&gt;" lists the editors that *are* running; pass `--project` to pick one.
+- `no editor running for <path>` lists the editors that *are* running; pass `--project` to pick one.

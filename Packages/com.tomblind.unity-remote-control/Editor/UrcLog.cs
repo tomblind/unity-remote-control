@@ -5,9 +5,9 @@ using System.Text;
 using System.Threading;
 using UnityEditor;
 using UnityEngine;
-using Sunblink.Urc.Protocol;
+using Urc.Protocol;
 
-namespace Sunblink.Urc.Editor
+namespace Urc.Editor
 {
     /// <summary>
     /// Captures the editor console to an append-only JSONL file — but ONLY WHILE A COMMAND IS
@@ -330,7 +330,7 @@ namespace Sunblink.Urc.Editor
         private static bool IsPlumbing(string frame) =>
             frame.IndexOf("System.Runtime.CompilerServices.AsyncTaskMethodBuilder", StringComparison.Ordinal) >= 0 ||
             frame.IndexOf("Microsoft.CodeAnalysis.Scripting", StringComparison.Ordinal) >= 0 ||
-            frame.IndexOf("Sunblink.Urc.Editor", StringComparison.Ordinal) >= 0 ||
+            frame.IndexOf("Urc.Editor", StringComparison.Ordinal) >= 0 ||
             frame.IndexOf("Submission#0:<Initialize>", StringComparison.Ordinal) >= 0 ||
             frame.IndexOf("Submission#0:<Factory>", StringComparison.Ordinal) >= 0 ||
             frame.IndexOf("EditorApplication:Internal_CallUpdateFunctions", StringComparison.Ordinal) >= 0;

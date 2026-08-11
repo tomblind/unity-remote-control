@@ -2,9 +2,9 @@ using System;
 using System.Threading;
 using UnityEditor;
 using UnityEngine;
-using Sunblink.Urc.Protocol;
+using Urc.Protocol;
 
-namespace Sunblink.Urc.Editor
+namespace Urc.Editor
 {
     /// <summary>
     /// The editor's state, published as volatiles for threads that must never touch Unity.

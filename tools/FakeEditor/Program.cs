@@ -8,9 +8,9 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
-using Sunblink.Urc.Protocol;
+using Urc.Protocol;
 
-namespace Sunblink.Urc.FakeEditor
+namespace Urc.FakeEditor
 {
     /// <summary>
     /// A scriptable stand-in for a Unity editor, speaking the real protocol.

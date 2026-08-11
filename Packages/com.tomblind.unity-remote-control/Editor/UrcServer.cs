@@ -7,12 +7,12 @@ using System.Text;
 using System.Threading;
 using UnityEditor;
 using UnityEngine;
-using Sunblink.Urc.Protocol;
+using Urc.Protocol;
 
 // Aliased rather than `using System.Diagnostics`, which would make `Debug` ambiguous with UnityEngine's.
 using Stopwatch = System.Diagnostics.Stopwatch;
 
-namespace Sunblink.Urc.Editor
+namespace Urc.Editor
 {
     /// <summary>
     /// Owns the TCP control channel and the discovery responder for this editor.
@@ -267,6 +267,7 @@ namespace Sunblink.Urc.Editor
                 finally
                 {
                     UrcJobStore.Save(job);
+                    UrcHistory.Record(job);
                     UrcJobs.MarkComplete(job.Id);
                     UrcMainThread.ReleaseKeepAlive();
                 }
@@ -370,6 +371,7 @@ namespace Sunblink.Urc.Editor
 
             var job = UrcJob.Create(jobId, UrcProtocol.Op.Exec, connection.ClientPid);
             job.State = UrcJobState.Running;
+            job.Detail = code;
 
             // Registered before enqueueing, so a re-attach arriving while the job runs finds it.
             var handle = UrcJobs.Register(job);
@@ -412,6 +414,7 @@ namespace Sunblink.Urc.Editor
                     // correctness requirement — the prior tool had none, and needed a bespoke
                     // compilationFinished hook to avoid losing results outright.
                     UrcJobStore.Save(job);
+                    UrcHistory.Record(job);
                     UrcJobs.MarkComplete(job.Id);
                     UrcMainThread.ReleaseKeepAlive();
                 }

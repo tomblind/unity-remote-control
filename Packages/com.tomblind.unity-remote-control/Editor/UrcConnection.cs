@@ -1,8 +1,8 @@
 using System;
 using System.IO;
-using Sunblink.Urc.Protocol;
+using Urc.Protocol;
 
-namespace Sunblink.Urc.Editor
+namespace Urc.Editor
 {
     /// <summary>
     /// A client connection, with writes serialized.
