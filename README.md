@@ -83,6 +83,10 @@ Results persist in an agent's context for a whole session, so:
   `name <Type>`. A large returned string spills in full to an artifact with a preview inline.
 - Console output and stack traces are **not** returned. A result carries counts and a cursor;
   `urc logs --since <cursor>` fetches the text when the counts say it is worth it.
+- Console capture runs **only while a command is running**. A real project logs constantly, and
+  Unity already writes all of it to `Editor.log` — what this adds is structure (cursors, levels,
+  trimmed stacks, domain boundaries), which is only useful around a command. A silent command
+  writes nothing at all.
 - Compile errors are captured structurally and **deduplicated** — one missing type produces hundreds
   of call-site errors, so you see the distinct problems first.
 - Snippet stack traces are trimmed at the first runner frame (a single `Debug.LogError` otherwise

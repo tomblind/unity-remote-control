@@ -247,6 +247,10 @@ namespace Sunblink.Urc.Editor
             UrcMainThread.RequestKeepAlive();
             EngageThrottle();
 
+            // Console capture is scoped to the command, not left running: a real project logs
+            // constantly, and recording output nobody asked about is pure churn.
+            UrcLog.BeginCapture();
+
             UrcMainThread.Enqueue(() =>
             {
                 UrcJobStore.Save(job);
@@ -272,6 +276,7 @@ namespace Sunblink.Urc.Editor
 
             WaitFor(connection, handle, settle);
             ReleaseThrottle();
+            UrcLog.EndCapture();
         }
 
         /// <summary>
@@ -312,7 +317,12 @@ namespace Sunblink.Urc.Editor
             if (!string.IsNullOrEmpty(jobId) && UrcJobs.TryGet(jobId, out var live))
             {
                 connection.Write(Json.Object().Set("ev", UrcProtocol.Ev.Accepted).Set("jobId", jobId));
-                WaitFor(connection, live, settle);
+
+                // A re-attach continues the original command, so it re-opens the capture window —
+                // the fresh domain after a reload starts with capture off.
+                UrcLog.BeginCapture();
+                try { WaitFor(connection, live, settle); }
+                finally { UrcLog.EndCapture(); }
                 return;
             }
 
@@ -331,7 +341,11 @@ namespace Sunblink.Urc.Editor
 
             // A re-attach after a reload continues settling, so the caller still learns whether the
             // compile that caused the reload actually succeeded.
-            if (settle) Settle(connection);
+            if (!settle) return;
+
+            UrcLog.BeginCapture();
+            try { Settle(connection); }
+            finally { UrcLog.EndCapture(); }
         }
 
         private static void HandleExec(UrcConnection connection, Json request, bool settle)
@@ -364,6 +378,10 @@ namespace Sunblink.Urc.Editor
 
             UrcMainThread.RequestKeepAlive();
             EngageThrottle();
+
+            // Console capture is scoped to the command, not left running: a real project logs
+            // constantly, and recording output nobody asked about is pure churn.
+            UrcLog.BeginCapture();
 
             UrcMainThread.Enqueue(async () =>
             {
@@ -401,6 +419,7 @@ namespace Sunblink.Urc.Editor
 
             WaitFor(connection, handle, settle);
             ReleaseThrottle();
+            UrcLog.EndCapture();
         }
 
         /// <summary>

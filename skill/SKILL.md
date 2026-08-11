@@ -38,6 +38,9 @@ Results persist in your context for the entire session, so keep them small.
 - **Console output and stack traces are NOT returned.** A result carries only counts and a cursor:
   `"logs":{"errors":1,"warnings":0,"total":3,"since":"c7cbd3bc:7:1"}`. Fetch the text only when the
   counts say it is worth it: `urc logs --since c7cbd3bc:7:1`.
+- Capture runs **only while a command is running**, so `urc logs` shows what your commands caused,
+  not everything the editor has ever printed. For output from outside a command, read Unity's own
+  `Editor.log`.
 - Need everything? Serialize it yourself and return the string — a large string is written in full
   to an artifact and the result carries the path.
 
@@ -123,6 +126,7 @@ return (CONDITION) ? "met" : "timeout";
 - `urc status` answers even while the editor is compiling or importing. A large
   `secondsSinceLastTick` means the main thread is stuck (a modal dialog, a long import) and `exec`
   would stall.
-- `urc logs` reads the log file directly, so it still works when the editor is wedged or has
-  crashed — it is the way to see a crashed session's last words.
+- `urc logs` reads the log file directly with no editor involved, so it still answers when the
+  editor is wedged or has crashed — provided the output happened during a command. A crash outside
+  one leaves nothing here; Unity's `Editor.log` has it.
 - "no editor running for &lt;path&gt;" lists the editors that *are* running; pass `--project` to pick one.

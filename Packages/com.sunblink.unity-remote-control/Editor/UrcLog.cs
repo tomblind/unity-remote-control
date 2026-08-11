@@ -10,17 +10,24 @@ using Sunblink.Urc.Protocol;
 namespace Sunblink.Urc.Editor
 {
     /// <summary>
-    /// Captures the editor console to an append-only JSONL file.
+    /// Captures the editor console to an append-only JSONL file — but ONLY WHILE A COMMAND IS
+    /// RUNNING.
     ///
     /// This is what makes results cheap. Console output and stack traces never travel back in a
-    /// result frame — they would flood an agent's context, where they persist for the whole session.
-    /// Instead a result carries counts and a cursor, and the caller fetches the text only if the
-    /// counts suggest it should.
+    /// result frame; they would flood an agent's context, where they persist for the whole session.
+    /// A result carries counts and a cursor instead, and the caller fetches the text only when the
+    /// counts justify it. `urc logs` then reads the file DIRECTLY, with no editor involved, so it
+    /// still answers while the editor is wedged or mid-reload.
     ///
-    /// Writing to disk rather than memory buys the other half: `urc logs` reads the file DIRECTLY,
-    /// with no editor involved, so it still works when the editor is wedged, mid-reload, or dead.
-    /// That is the "last words after a crash" case, and it is why every line is flushed rather than
-    /// buffered.
+    /// WHY NOT CAPTURE CONTINUOUSLY. An earlier version did, justified as crash forensics — which
+    /// was mostly wrong: Unity already writes Editor.log, containing this output plus native detail
+    /// we never see, so we were duplicating it. What this file uniquely provides is STRUCTURE
+    /// (gen/seq cursors, levels, trimmed stacks, boundary markers), and that is only useful around a
+    /// command. Meanwhile a real project logs constantly — the reference project churns heavily —
+    /// so always-on capture meant a file write per line, flushed, forever, to record output nobody
+    /// asked about. The prior tool captured only during commands and that proved sufficient.
+    ///
+    /// When capture is off the hook stays subscribed and costs one volatile read per log line.
     /// </summary>
     [InitializeOnLoad]
     internal static class UrcLog
@@ -49,11 +56,10 @@ namespace Sunblink.Urc.Editor
                 return;
             }
 
-            // Boundary lines segment the stream, so a reader can tell which loaded-code era produced
-            // which output. `--since` treats them as free: they are exempt from level filtering and
-            // never consume a --tail budget.
-            WriteEvent("domain-load");
-
+            // The domain-load boundary is NOT written here: capture is off at load, and an idle
+            // editor reloading is not worth a line. MarkGeneration emits it lazily, the first time
+            // this domain actually writes something. Boundaries are exempt from level filtering and
+            // never consume a --tail budget, so they stay free to the reader either way.
             Application.logMessageReceivedThreaded += OnLogThreaded;
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
             AssemblyReloadEvents.beforeAssemblyReload += OnBeforeReload;
@@ -75,6 +81,28 @@ namespace Sunblink.Urc.Editor
         private static int _errors;
         private static int _warnings;
         private static int _total;
+
+        /// <summary>
+        /// Refcounted, because the bracket spans a command AND its settle window, and a re-attach
+        /// after a domain reload re-enters it. Reset implicitly by each new domain, which is correct:
+        /// a fresh domain captures nothing until a command asks it to.
+        /// </summary>
+        private static int _capturing;
+
+        public static bool IsCapturing => Volatile.Read(ref _capturing) > 0;
+
+        /// <summary>
+        /// Opens the capture window. Safe from the connection thread — an interlocked increment,
+        /// no Unity API — so capture starts immediately rather than on the next editor tick.
+        /// </summary>
+        public static void BeginCapture() => Interlocked.Increment(ref _capturing);
+
+        public static void EndCapture()
+        {
+            // Clamp rather than let a stray release drive this negative and silently disable capture
+            // for the rest of the session.
+            if (Interlocked.Decrement(ref _capturing) < 0) Interlocked.Exchange(ref _capturing, 0);
+        }
 
         /// <summary>Counts since a given point, for the compact summary a result frame carries.</summary>
         public static Json SummarySince(int errorsAt, int warningsAt, int totalAt, string cursor)
@@ -106,6 +134,10 @@ namespace Sunblink.Urc.Editor
         /// </summary>
         private static void OnLogThreaded(string message, string stackTrace, LogType type)
         {
+            // The cheap early-out that makes this affordable in a project that logs constantly:
+            // one volatile read, no allocation, no IO.
+            if (!IsCapturing) return;
+
             try
             {
                 switch (type)
@@ -166,21 +198,54 @@ namespace Sunblink.Urc.Editor
                 .Set("message", name));
         }
 
+        private static int _lastWrittenGeneration;
+
         private static void Write(Json line)
         {
+            if (!IsCapturing) return;
+
             lock (Gate)
             {
                 if (_writer == null) return;
-                try
-                {
-                    _writer.WriteLine(line.ToString());
-                }
-                catch (Exception)
-                {
-                    // Disk full, permissions, a closed handle during shutdown. Drop the line rather
-                    // than take the editor down.
-                    _writer = null;
-                }
+                MarkGeneration();
+                WriteRaw(line);
+            }
+        }
+
+        /// <summary>
+        /// Emits a domain-load boundary lazily, the first time a generation writes anything.
+        ///
+        /// Since capture only runs during commands, an editor that reloads while idle would
+        /// otherwise leave a `domain-unload` with no matching `domain-load` — the stream would look
+        /// truncated rather than merely quiet. Writing the marker on first use keeps it coherent
+        /// without any always-on cost. Caller holds the lock.
+        /// </summary>
+        private static void MarkGeneration()
+        {
+            var generation = UrcEditorState.Generation;
+            if (_lastWrittenGeneration == generation) return;
+            _lastWrittenGeneration = generation;
+
+            WriteRaw(Json.Object()
+                .Set("ts", DateTime.UtcNow.ToString("o"))
+                .Set("level", "info")
+                .Set("gen", generation)
+                .Set("seq", Interlocked.Increment(ref _seq))
+                .Set("event", "domain-load")
+                .Set("message", "domain-load"));
+        }
+
+        private static void WriteRaw(Json line)
+        {
+            try
+            {
+                _writer.WriteLine(line.ToString());
+            }
+            catch (Exception)
+            {
+                // Disk full, permissions, a closed handle during shutdown. Drop the line rather than
+                // take the editor down.
+                _writer = null;
             }
         }
 
