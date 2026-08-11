@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A scriptable stand-in for a Unity editor, speaking the real protocol.
+
+    It exists so the CLI's discovery, matching, and (from Phase 2) reconnect/re-attach state machine
+    can be tested without Unity — the reload, crash, restart, and stale-job paths are all far easier
+    to script here than to provoke in a real editor. It compiles the same shared protocol sources,
+    so a wire-format change breaks it too.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>fake-editor</AssemblyName>
+    <RootNamespace>Sunblink.Urc.FakeEditor</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\Packages\com.sunblink.unity-remote-control\Editor\Protocol\**\*.cs"
+             LinkBase="Protocol" />
+  </ItemGroup>
+
+</Project>

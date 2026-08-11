@@ -1,0 +1,74 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Compiles the Unity package's editor sources WITHOUT opening Unity, so a syntax or API error is
+    caught in seconds instead of after a round trip through the editor.
+
+    It deliberately targets the OLDEST supported editor (2021.3) and pins LangVersion 9.0, because
+    those — not net10.0 — are the real constraints on this code. Building against 6000.x would let a
+    C# 10+ construct or a newer API through, and it would fail for a consumer on the floor version.
+
+    This project is never shipped and never referenced by the package; it is a lint step.
+    Override the editor with:  dotnet build -p:UnityManagedDir=<path to Editor/Data/Managed>
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- Reference-only: never produces a usable assembly, and never needs to. -->
+    <NoWarn>$(NoWarn);CS1701;CS1702;NU1701</NoWarn>
+    <UnityManagedDir Condition="'$(UnityManagedDir)' == ''">C:\Program Files\Unity\Hub\Editor\2021.3.43f1\Editor\Data\Managed</UnityManagedDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\Packages\com.sunblink.unity-remote-control\Editor\**\*.cs" LinkBase="Package" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="UnityEngine">
+      <HintPath>$(UnityManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEditor">
+      <HintPath>$(UnityManagedDir)\UnityEditor.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    Roslyn, taken from the optional package. The editor package's asmdef names no Roslyn assembly —
+    the DLLs are auto-referenced via `isExplicitlyReferenced: 0` in their .meta — so it binds to
+    whichever copy a project provides. It does, however, require SOME copy: a project with neither
+    the optional package nor its own Roslyn will not compile the editor package.
+  -->
+  <PropertyGroup>
+    <RoslynDir>..\..\Packages\com.sunblink.unity-remote-control.roslyn\Plugins\Roslyn</RoslynDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Microsoft.CodeAnalysis">
+      <HintPath>$(RoslynDir)\Microsoft.CodeAnalysis.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.CodeAnalysis.CSharp">
+      <HintPath>$(RoslynDir)\Microsoft.CodeAnalysis.CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.CodeAnalysis.Scripting">
+      <HintPath>$(RoslynDir)\Microsoft.CodeAnalysis.Scripting.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.CodeAnalysis.CSharp.Scripting">
+      <HintPath>$(RoslynDir)\Microsoft.CodeAnalysis.CSharp.Scripting.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Collections.Immutable">
+      <HintPath>$(RoslynDir)\System.Collections.Immutable.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="VerifyUnityPresent" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.dll')"
+           Text="Unity managed assemblies not found at '$(UnityManagedDir)'. Pass -p:UnityManagedDir=&lt;path&gt;." />
+  </Target>
+
+</Project>

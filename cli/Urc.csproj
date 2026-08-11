@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>urc</AssemblyName>
+    <RootNamespace>Sunblink.Urc</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!--
+    NativeAOT: a standalone native binary with no runtime for users to install, ~10ms startup.
+    It cannot cross-compile across operating systems, so macOS builds go through CI on a macOS
+    runner. Locally we build win-x64 only.
+
+    AOT is also why the protocol layer hand-rolls its JSON: System.Text.Json's reflection path does
+    not work under AOT without source-generated contexts, and Unity has no System.Text.Json at all.
+  -->
+  <PropertyGroup>
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
+    <!-- Surfaces any accidental reflection dependency at build time rather than as a runtime failure. -->
+    <IlcTrimMetadata>true</IlcTrimMetadata>
+  </PropertyGroup>
+
+  <!--
+    The protocol layer is shared with the Unity package by SOURCE INCLUSION, not as a DLL, so a
+    wire-format change fails to compile on both sides at once.
+
+    It lives INSIDE the package and the CLI links out to it, rather than the other way round: Unity
+    only compiles source under a package or Assets folder, so a top-level /shared would need a copy
+    step, and the package would not build in the repo until that step had run.
+
+    These files must stay C# 9 / netstandard2.1 clean — Unity 2021.3 is the constraint, not net10.0.
+  -->
+  <ItemGroup>
+    <Compile Include="..\Packages\com.sunblink.unity-remote-control\Editor\Protocol\**\*.cs"
+             LinkBase="Protocol" />
+  </ItemGroup>
+
+</Project>

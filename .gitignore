@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+artifacts/
+
+# Unity (this repo is itself a Unity project for dev/testing)
+[Ll]ibrary/
+[Tt]emp/
+[Ll]ogs/
+[Uu]serSettings/
+[Mm]emoryCaptures/
+[Bb]uild/
+[Bb]uilds/
+*.csproj
+*.sln
+*.user
+!tools/**/*.csproj
+!cli/*.csproj
+
+# OS
+.DS_Store
+Thumbs.db

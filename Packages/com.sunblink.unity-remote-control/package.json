@@ -1,0 +1,11 @@
+{
+  "name": "com.sunblink.unity-remote-control",
+  "displayName": "Unity Remote Control",
+  "version": "0.1.0",
+  "unity": "2021.3",
+  "description": "Drive this editor from the `urc` CLI: execute C#, compile, and inspect state — over a protocol that survives domain reloads.",
+  "keywords": ["editor", "automation", "agent", "cli"],
+  "author": {
+    "name": "Sunblink"
+  }
+}
