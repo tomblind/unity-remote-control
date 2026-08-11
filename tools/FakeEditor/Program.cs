@@ -254,6 +254,22 @@ namespace Sunblink.Urc.FakeEditor
             while (clock.ElapsedMilliseconds < _execDelayMs) Thread.Sleep(5);
             Finish(job);
             Write(writer, ResultFrame(job));
+            Settle(writer);
+        }
+
+        /// <summary>
+        /// Mirrors the real server's settle window. Without it the fake is not a faithful stand-in —
+        /// and a client that waits for a settle frame it never receives looks like a reconnect loop
+        /// rather than the protocol gap it actually is.
+        /// </summary>
+        private static void Settle(StreamWriter writer)
+        {
+            Write(writer, Json.Object()
+                .Set("ev", UrcProtocol.Ev.State)
+                .Set("phase", UrcProtocol.State.Idle)
+                .Set("settled", true)
+                .Set("generation", _generation)
+                .Set("compile", Json.Object().Set("status", "ok").Set("errorCount", 0)));
         }
 
         private static void HandleAttach(StreamWriter writer, string jobId)
@@ -274,6 +290,7 @@ namespace Sunblink.Urc.FakeEditor
 
             while (!job.Done && _running) Thread.Sleep(10);
             Write(writer, ResultFrame(job));
+            Settle(writer);
         }
 
         private static void Finish(Job job)

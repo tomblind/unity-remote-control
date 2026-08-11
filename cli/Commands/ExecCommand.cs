@@ -121,6 +121,16 @@ namespace Sunblink.Urc
             private Json _result;
             private Json _settled;
 
+            /// <summary>
+            /// Whether the editor announced a reload on this connection.
+            ///
+            /// This is what separates "the socket dropped because the domain is reloading — reconnect
+            /// and re-attach" from "the peer simply closed". Without it, a server that never sends a
+            /// settle frame (an older package, or any protocol drift) turns into a reconnect loop
+            /// that spins until the timeout, even though the result is already in hand.
+            /// </summary>
+            private bool _sawReloading;
+
             /// <summary>Set by `resume`: there is nothing to submit, only a job to re-attach to.</summary>
             public bool AlreadySubmitted { set { _submitted = value; } }
 
@@ -162,6 +172,7 @@ namespace Sunblink.Urc
                     using (connection)
                     {
                         _generation = connection.Greeting["generation"].AsInt(_generation);
+                        _sawReloading = false;   // per-connection, not per-session
 
                         var request = _submitted ? AttachFrame() : ExecFrame();
                         if (!connection.Send(request))
@@ -193,7 +204,17 @@ namespace Sunblink.Urc
                     // Bounded wait so the deadline is enforced even during a long silent job —
                     // without it the read blocks forever and --timeout never fires.
                     var read = connection.TryReadFrame(TimeSpan.FromMilliseconds(200), out var frame);
-                    if (read == EditorConnection.Read.Closed) return null;   // reload or death
+
+                    if (read == EditorConnection.Read.Closed)
+                    {
+                        // Closed after a reload was announced, or before we have anything: reconnect.
+                        if (_sawReloading || _result == null) return null;
+
+                        // Closed with a result already in hand and no reload announced: the peer just
+                        // hung up. Report what we have rather than chasing a settle frame forever.
+                        return Report();
+                    }
+
                     if (read == EditorConnection.Read.Timeout) continue;
 
                     switch (frame["ev"].AsString())
@@ -216,6 +237,7 @@ namespace Sunblink.Urc
                             continue;
 
                         case UrcProtocol.Ev.Reloading:
+                            _sawReloading = true;
                             if (_args.Has("verbose"))
                                 Console.Error.WriteLine("  [domain reloading]");
                             return null;

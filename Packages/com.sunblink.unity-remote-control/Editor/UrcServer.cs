@@ -370,10 +370,16 @@ namespace Sunblink.Urc.Editor
                 // On the main thread from here: the journal write and the run both need it.
                 UrcJobStore.Save(job);
 
+                // Cursor stamped at DISPATCH, so `logs --since` shows everything this command caused,
+                // across any number of reloads.
+                var cursor = UrcLog.Cursor;
+                UrcLog.Snapshot(out var errors0, out var warnings0, out var total0);
+
                 try
                 {
                     var run = await UrcCodeRunner.RunAsync(code, usings);
                     job.Complete(run.Status, run.Summary, run.Value);
+                    job.ValueArtifact = run.ValueArtifact;
                 }
                 catch (Exception ex)
                 {
@@ -381,6 +387,7 @@ namespace Sunblink.Urc.Editor
                 }
                 finally
                 {
+                    job.Logs = UrcLog.SummarySince(errors0, warnings0, total0, cursor);
                     // ORDERING RULE: journal first, signal second. If delivery then loses a race with
                     // a reload, the client re-attaches and reads the result back from the journal.
                     // That safety net is what makes pre-reload delivery an optimization rather than a

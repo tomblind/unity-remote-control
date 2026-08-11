@@ -44,6 +44,16 @@ namespace Sunblink.Urc.Editor
         /// <summary>Pid of the client that submitted it — used to reclaim the connection slot if it dies.</summary>
         public int ClientPid;
 
+        /// <summary>
+        /// Counts of what the editor logged during this job, plus the cursor to fetch it.
+        /// Deliberately counts and a pointer, never the text: results persist in an agent's context
+        /// for the whole session, so the caller decides whether the output is worth reading.
+        /// </summary>
+        public Json Logs;
+
+        /// <summary>Path to the full value when it was too large to inline.</summary>
+        public string ValueArtifact;
+
         public bool IsTerminal => State == UrcJobState.Done || State == UrcJobState.Interrupted;
 
         public static UrcJob Create(string id, string cmd, int clientPid) => new UrcJob
@@ -121,6 +131,8 @@ namespace Sunblink.Urc.Editor
                 .Set("status", Status ?? UrcProtocol.Status.Interrupted)
                 .SetIf("summary", Summary)
                 .SetIf("value", Value)
+                .SetIf("valueArtifact", ValueArtifact)
+                .SetIf("logs", Logs)
                 .Set("generation", FinishedGeneration != 0 ? FinishedGeneration : StartedGeneration);
     }
 }

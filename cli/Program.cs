@@ -40,6 +40,7 @@ namespace Sunblink.Urc
                     case "exec": return ExecCommand.Run(args);
                     case "compile": return ExecCommand.Compile(args);
                     case "resume": return ExecCommand.Resume(args);
+                    case "logs": return LogsCommand.Run(args);
                     default:
                         Error($"unknown command '{args.Command}'. Run `urc help` for usage.");
                         return ExitCode.Usage;
@@ -67,6 +68,11 @@ COMMANDS
                       Exit 0 only if the project compiles.
   resume [<jobId>]    Pick up a job whose CLI was killed or timed out. With no id,
                       the job currently in flight (there is only ever one).
+  logs                Captured console output, read straight off disk. Works while
+                      the editor is wedged, mid-reload, or dead.
+                        --since <cursor>  everything after a result's logs.since
+                        --errors          errors only  (--level log|warning|error)
+                        --tail <n>        last n lines (default 50 without --since)
   status              State of the editor for this project
   status --all        Every running editor, whatever project it serves
 

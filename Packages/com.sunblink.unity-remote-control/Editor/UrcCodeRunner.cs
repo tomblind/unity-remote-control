@@ -48,8 +48,16 @@ namespace Sunblink.Urc.Editor
             public string Summary;
             public Json Value;
             public bool Truncated;
+            public string ValueArtifact;
             public List<string> AutoUsings;
         }
+
+        /// <summary>
+        /// Beyond this, a returned string is written to an artifact and the result carries a preview
+        /// plus the path. This is the documented way to get everything: serialize the shape yourself
+        /// and return the string, rather than fighting the collection caps.
+        /// </summary>
+        private const int MaxInlineStringChars = 2048;
 
         /// <summary>Drops the cached options so the next run rebuilds them. Both caches die with the domain anyway.</summary>
         public static void InvalidateCache()
@@ -132,6 +140,26 @@ namespace Sunblink.Urc.Editor
             try
             {
                 var state = await script.RunAsync(catchException: null);
+
+                // A large top-level string spills in FULL to an artifact rather than being clipped:
+                // it is the documented escape hatch for "give me everything", so silently truncating
+                // it would close the only door out of the caps.
+                if (state.ReturnValue is string text && text.Length > MaxInlineStringChars)
+                {
+                    var artifact = WriteArtifact(text);
+                    return new Attempt
+                    {
+                        Result = new RunResult
+                        {
+                            Status = UrcProtocol.Status.Ok,
+                            Value = Json.String(text.Substring(0, MaxInlineStringChars) +
+                                                $"… <{text.Length} chars — full text in the artifact>"),
+                            Truncated = true,
+                            ValueArtifact = artifact,
+                        }
+                    };
+                }
+
                 var projected = UrcBoundedJson.Project(state.ReturnValue);
 
                 return new Attempt
@@ -162,6 +190,30 @@ namespace Sunblink.Urc.Editor
                         Summary = $"{inner.GetType().Name}: {inner.Message}",
                     }
                 };
+            }
+        }
+
+        /// <summary>
+        /// Writes an oversized value to the user-global artifact directory, never into the project —
+        /// keeping the zero-footprint guarantee and surviving `git clean -xdf`.
+        /// </summary>
+        private static string WriteArtifact(string content)
+        {
+            try
+            {
+                var dir = UrcPaths.ArtifactDir(UrcEditorState.ProjectPath);
+                Directory.CreateDirectory(dir);
+
+                var path = Path.Combine(dir,
+                    $"exec-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{UrcPaths.StableHash(content).Substring(0, 6)}.txt");
+
+                File.WriteAllText(path, content);
+                return path;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[urc] could not write the result artifact: {e.Message}");
+                return null;
             }
         }
 
