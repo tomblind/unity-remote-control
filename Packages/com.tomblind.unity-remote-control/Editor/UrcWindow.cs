@@ -135,7 +135,11 @@ namespace Urc.Editor
                 return;
             }
 
-            using var scroll = new EditorGUILayout.ScrollViewScope(_historyScroll, GUILayout.MinHeight(120));
+            // Fills whatever is left of the window rather than sitting at a fixed height. History is
+            // the part that grows, so it should get the space; MinHeight keeps it usable when the
+            // window is dragged short, and ExpandHeight claims the rest when it is not.
+            using var scroll = new EditorGUILayout.ScrollViewScope(
+                _historyScroll, GUILayout.MinHeight(80), GUILayout.ExpandHeight(true));
             _historyScroll = scroll.scrollPosition;
 
             for (var i = entries.Count - 1; i >= 0; i--)
