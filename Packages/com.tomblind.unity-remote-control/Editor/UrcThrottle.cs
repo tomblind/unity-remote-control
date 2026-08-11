@@ -19,18 +19,27 @@ namespace Urc.Editor
     ///
     /// THE COORDINATION STATE IS A FILE, NOT EditorPrefs. `InteractionMode` is one machine-global
     /// value shared by every Unity editor this user runs, so the bookkeeping — who currently holds a
-    /// bracket, and what the user's real value was — must be visible to ALL of them. EditorPrefs
-    /// cannot do that: Unity caches them per process and never invalidates, so one editor's write is
-    /// invisible to another that has already read the key.
+    /// bracket, and what the user's real value was — must be visible to ALL of them, and must be
+    /// updated atomically.
     ///
-    /// That was verified directly, with two live editors: A wrote a value and read it back; B still
-    /// read the old one. Under the previous EditorPrefs design an editor could therefore stash a
-    /// stale backup and restore the wrong value on release, or miss another editor's claim entirely
-    /// and restore while it was still needed — which is the exact latch this bookkeeping exists to
-    /// prevent.
+    /// EditorPrefs gives neither. Unity caches them per process: verified with two live editors, A
+    /// wrote a value and read it back while B still read the old one. Under the original EditorPrefs
+    /// design an editor could therefore stash a stale backup and restore the wrong value, or miss
+    /// another editor's claim and restore while it was still needed — the exact latch this
+    /// bookkeeping exists to prevent.
     ///
-    /// A file has no such cache: every read hits the filesystem. Reads and writes happen only at
-    /// bracket transitions, never on a timer.
+    /// There IS an escape hatch — `EditorPrefs.Sync()` (internal) does force a reload from the
+    /// backing store; verified. It was still rejected, for two reasons:
+    ///
+    ///   1. It fixes visibility but NOT atomicity. The owner list is read-modify-write, so two
+    ///      editors engaging together can still interleave: both read [x], both write, and one claim
+    ///      is silently lost. No amount of syncing closes that window.
+    ///   2. It is internal, so it needs reflection, and if a Unity version drops it the failure is
+    ///      SILENT — stale reads that restore wrong values, with nothing to notice.
+    ///
+    /// A file has no per-process cache, and `FileShare.None` held across the whole read-modify-write
+    /// gives the atomicity as well. Reads and writes happen only at bracket transitions, never on a
+    /// timer.
     ///
     /// All members are MAIN THREAD ONLY — EditorPrefs is a Unity API.
     /// </summary>
