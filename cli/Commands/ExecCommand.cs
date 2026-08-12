@@ -468,7 +468,22 @@ namespace Urc
             }
 
             foreach (var positional in args.Positional)
-                if (positional == "-") return Console.In.ReadToEnd();
+            {
+                if (positional != "-") continue;
+
+                // Without a pipe, ReadToEnd would block on the terminal and look like a hang.
+                if (Console.IsInputRedirected)
+                {
+                    var piped = Console.In.ReadToEnd();
+                    if (!string.IsNullOrWhiteSpace(piped)) return piped;
+                }
+
+                // Empty stdin would otherwise travel to the editor as an empty snippet and come back
+                // as a server-side "exec requires 'code'", which points at the wrong end.
+                error = "`exec -` reads the snippet from stdin, but nothing arrived.\n" +
+                        "  Try:  echo 'return 1;' | urc exec -";
+                return null;
+            }
 
             error = "exec needs code: --code '<C#>', --file <path>, or - to read stdin.";
             return null;

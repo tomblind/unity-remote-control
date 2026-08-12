@@ -38,6 +38,13 @@ function Invoke-Urc {
     return [pscustomobject]@{ Output = $output; ExitCode = $LASTEXITCODE }
 }
 
+function Invoke-UrcPiped {
+    param([string]$Stdin, [string[]]$Arguments)
+    $ErrorActionPreference = 'Continue'
+    $output = ($Stdin | & $urc @Arguments 2>&1 | Out-String)
+    return [pscustomobject]@{ Output = $output; ExitCode = $LASTEXITCODE }
+}
+
 function Start-Fake {
     param([string[]]$Arguments)
     $log = [IO.Path]::GetTempFileName()
@@ -81,6 +88,23 @@ Check 'exec returns a value' {
         $r = Invoke-Urc @('exec', '--code', 'return 2+2;', '--project', $projA)
         Assert ($r.ExitCode -eq 0) "expected exit 0, got $($r.ExitCode): $($r.Output)"
         Assert ($r.Output -match 'fake-result') "unexpected output: $($r.Output)"
+    } finally { Stop-Fake $f }
+}
+
+# --- the documented stdin form, which never actually worked ---------------------------------
+# A bare "-" took the flag branch of the arg parser and was silently dropped, so
+# `cat snippet.cs | urc exec -` could not run - while --help advertised it. Piping is the only way
+# to parameterise a snippet without adding compiled code to the project, so this is load-bearing.
+Check 'exec - reads the snippet from stdin' {
+    $f = Start-Fake @('--project', $projA, '--seconds', '12', '--exec-delay', '50')
+    try {
+        $r = Invoke-UrcPiped 'return 1 + 1;' @('exec', '-', '--project', $projA)
+        Assert ($r.ExitCode -eq 0) "expected exit 0, got $($r.ExitCode): $($r.Output)"
+        Assert ($r.Output -match 'fake-result') "stdin snippet did not run: $($r.Output)"
+
+        # Flags on either side of the dash must both parse.
+        $r2 = Invoke-UrcPiped 'return 2;' @('exec', '--project', $projA, '-')
+        Assert ($r2.ExitCode -eq 0) "dash after a flag failed: $($r2.Output)"
     } finally { Stop-Fake $f }
 }
 

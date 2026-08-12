@@ -134,6 +134,12 @@ EXIT CODES
             for (var i = 0; i < args.Length; i++)
             {
                 var arg = args[i];
+
+                // A bare "-" is the conventional "read stdin" token, NOT a flag. Without this case
+                // it takes the branch below, TrimStart('-') leaves an empty name, and it is dropped
+                // silently — which made the documented `cat x.cs | urc exec -` form unreachable.
+                if (arg == "-") { _positional.Add(arg); continue; }
+
                 if (!arg.StartsWith("-", StringComparison.Ordinal)) { _positional.Add(arg); continue; }
 
                 var name = arg.TrimStart('-');
