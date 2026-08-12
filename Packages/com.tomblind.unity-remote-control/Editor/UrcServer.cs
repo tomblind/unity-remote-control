@@ -41,6 +41,17 @@ namespace Urc.Editor
 
         static UrcServer()
         {
+            // BATCH MODE SERVES NOTHING. Unity spawns AssetImportWorker processes that are full
+            // Unity.exe instances running this same package, with the SAME -projectPath. Without this
+            // guard each worker binds a port and answers discovery, so the CLI sees several
+            // indistinguishable editors for one project and picks one at random — and a worker never
+            // runs EditorApplication.update, so a command landing on one hangs until the timeout.
+            // Observed as random flakiness that "fixes itself" on retry, worst during heavy imports,
+            // which is exactly when the workers exist.
+            //
+            // No interactive editor means nothing to drive, so batch mode simply does not serve.
+            if (Application.isBatchMode) return;
+
             // Must come first: its constructor calls SessionState and Application.dataPath, and every
             // thread started below reads from it. Forcing it here guarantees those Unity APIs run on
             // the main thread rather than on whichever background thread happens to touch it first.
@@ -132,8 +143,16 @@ namespace Urc.Editor
         }
 
         /// <summary>
-        /// Accepts one connection at a time — concurrent execution against a single editor has no
-        /// coherent meaning, and serialising here removes the connection table entirely.
+        /// Accepts connections and hands each to its own short-lived thread.
+        ///
+        /// ONE JOB at a time is still the rule, but it is enforced by the pending-job check in the
+        /// handlers — NOT by blocking here. Serving inline used to mean a long job (or a settle
+        /// window) stopped the accept loop entirely, so a second client never received the greeting
+        /// and could not be told `busy`; it just timed out, and every retry timed out behind it. A
+        /// single stalled settle therefore read as a wedged editor.
+        ///
+        /// Handler threads are cheap and short: an un-handshaked connection is dropped within
+        /// UrcProtocol.RequestDeadline, and a client that just wants `busy` is answered immediately.
         /// </summary>
         private static void AcceptLoop()
         {
@@ -145,26 +164,37 @@ namespace Urc.Editor
                 catch (InvalidOperationException) { return; }   // listener stopped
                 catch (SocketException) { if (!_running) return; continue; }
 
-                using (client)
+                var accepted = client;
+                var thread = new Thread(() =>
                 {
-                    try
+                    using (accepted)
                     {
-                        UrcSockets.DisableHandleInheritance(client.Client);
-                        Serve(client);
+                        UrcConnection connection = null;
+                        try
+                        {
+                            UrcSockets.DisableHandleInheritance(accepted.Client);
+                            connection = Serve(accepted);
+                        }
+                        catch (Exception)
+                        {
+                            // A client that dies mid-conversation is routine, not an error.
+                        }
+                        finally
+                        {
+                            // Only the slot holder clears the slot; a concurrent `busy` responder
+                            // must not evict the connection actually running the job.
+                            if (connection != null && ReferenceEquals(_active, connection)) _active = null;
+                        }
                     }
-                    catch (Exception)
-                    {
-                        // A client that dies mid-conversation is routine, not an error.
-                    }
-                    finally
-                    {
-                        _active = null;
-                    }
-                }
+                })
+                { IsBackground = true, Name = "urc-conn" };
+
+                thread.Start();
             }
         }
 
-        private static void Serve(TcpClient client)
+        /// <summary>Returns the connection if it claimed the job slot, else null.</summary>
+        private static UrcConnection Serve(TcpClient client)
         {
             client.NoDelay = true;
 
@@ -185,13 +215,13 @@ namespace Urc.Editor
 
             string line;
             try { line = reader.ReadLine(); }
-            catch (IOException) { return; }   // deadline elapsed, or the peer vanished
+            catch (IOException) { return null; }   // deadline elapsed, or the peer vanished
 
-            if (string.IsNullOrEmpty(line)) return;
-            if (!Json.TryParse(line, out var request)) { connection.WriteError("malformed request frame."); return; }
+            if (string.IsNullOrEmpty(line)) return null;
+            if (!Json.TryParse(line, out var request)) { connection.WriteError("malformed request frame."); return null; }
 
             var op = request["op"].AsString();
-            if (string.IsNullOrEmpty(op)) { connection.WriteError("request has no 'op'."); return; }
+            if (string.IsNullOrEmpty(op)) { connection.WriteError("request has no 'op'."); return null; }
 
             var peerProtocol = request["client"]["protocol"].AsInt(UrcProtocol.Version);
             if (peerProtocol != UrcProtocol.Version)
@@ -199,13 +229,10 @@ namespace Urc.Editor
                 connection.WriteError(
                     $"protocol mismatch: client speaks v{peerProtocol}, this package speaks " +
                     $"v{UrcProtocol.Version}. The CLI ships beside the package — re-run the installer.");
-                return;
+                return null;
             }
 
             connection.ClientPid = request["client"]["pid"].AsInt();
-
-            // The slot is claimed here, on a VALID request — never on accept.
-            _active = connection;
 
             // No further reads are expected, so the socket may now block indefinitely: a long job is
             // normal, and the client's own timeout bounds the wait.
@@ -222,7 +249,18 @@ namespace Urc.Editor
                     connection.WriteError($"op '{op}' is not implemented in package v{UrcVersion.Value}.");
                     break;
             }
+
+            return connection;
         }
+
+        /// <summary>
+        /// Claims the job slot for this connection.
+        ///
+        /// Called by a handler only AFTER it has passed the busy check, so a connection that merely
+        /// gets told `busy` never becomes the slot holder — and therefore never receives the
+        /// `reloading` notification meant for the job actually running.
+        /// </summary>
+        private static void ClaimSlot(UrcConnection connection) => _active = connection;
 
         /// <summary>
         /// `compile` is deliberately thin: it triggers a refresh and lets the ambient machinery do
@@ -237,6 +275,8 @@ namespace Urc.Editor
 
             var pending = UrcEditorState.PendingJobId;
             if (!string.IsNullOrEmpty(pending) && pending != jobId) { WriteBusy(connection, pending); return; }
+
+            ClaimSlot(connection);
 
             var job = UrcJob.Create(jobId, UrcProtocol.Op.Compile, connection.ClientPid);
             job.State = UrcJobState.Running;
@@ -317,6 +357,7 @@ namespace Urc.Editor
             // what makes a re-attach indistinguishable from never having disconnected.
             if (!string.IsNullOrEmpty(jobId) && UrcJobs.TryGet(jobId, out var live))
             {
+                ClaimSlot(connection);
                 connection.Write(Json.Object().Set("ev", UrcProtocol.Ev.Accepted).Set("jobId", jobId));
 
                 // A re-attach continues the original command, so it re-opens the capture window —
@@ -361,6 +402,8 @@ namespace Urc.Editor
             // thread, and SessionState is main-thread only.
             var pending = UrcEditorState.PendingJobId;
             if (!string.IsNullOrEmpty(pending) && pending != jobId) { WriteBusy(connection, pending); return; }
+
+            ClaimSlot(connection);
 
             var usings = new List<string>();
             foreach (var item in request["usings"].Items)
@@ -467,7 +510,9 @@ namespace Urc.Editor
                     lastPhase = phase;
                 }
 
-                if (phase == UrcProtocol.State.Idle)
+                // Settled means "nothing transient left to wait out" — NOT "idle". Play mode is a
+                // stable state, so waiting for idle there waits forever.
+                if (!UrcProtocol.State.IsTransient(phase))
                 {
                     if (idleSince < 0) idleSince = clock.ElapsedMilliseconds;
                     else if (clock.ElapsedMilliseconds - idleSince >= SettleDebounceMs)
@@ -500,7 +545,9 @@ namespace Urc.Editor
 
             connection.Write(Json.Object()
                 .Set("ev", UrcProtocol.Ev.State)
-                .Set("phase", settled ? UrcProtocol.State.Idle : UrcEditorState.State)
+                // Report the state we actually ended in, never a hardcoded "idle" — settling in play
+                // mode is now normal, and mislabelling it would hide that from the caller.
+                .Set("phase", UrcEditorState.State)
                 .Set("settled", settled)
                 .Set("generation", UrcEditorState.Generation)
                 .SetIf("compile", compile));

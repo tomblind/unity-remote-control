@@ -81,6 +81,21 @@ namespace Urc.Protocol
             public const string PlayMode = "playmode";
             public const string Busy = "busy";
             public const string Reloading = "reloading";
+
+            /// <summary>
+            /// True for states that end on their own — the ones worth waiting out.
+            ///
+            /// PLAY MODE IS NOT ONE OF THEM. It is a stable state that lasts until someone stops it,
+            /// so waiting for it to clear is waiting forever. Settling on "== idle" instead of this
+            /// meant every command issued in play mode burned the full settle budget (measured: 300s
+            /// exactly), and because the editor serves one command at a time, each stalled settle
+            /// blocked everything behind it — one accidental settle read as a wedged session.
+            ///
+            /// `Busy` is likewise excluded: it means another job holds the editor, which this
+            /// command cannot wait out either.
+            /// </summary>
+            public static bool IsTransient(string state) =>
+                state == Compiling || state == Importing || state == Reloading;
         }
 
         /// <summary>Terminal job outcomes.</summary>

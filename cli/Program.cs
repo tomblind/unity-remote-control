@@ -102,6 +102,8 @@ OPTIONS
                       the working directory (like git finding .git).
   --json              Emit the raw result document on stdout and nothing else.
   --verbose           Report reloads and state changes while waiting.
+  --pid <n>           Target one specific editor process. Only needed when more than
+                      one answers for the same project.
   --no-settle         Return as soon as the command finishes, without waiting for the
                       editor to go quiet. Faster for a read-only probe; the trade is
                       that your next call may hit an importing or compiling editor,
@@ -165,6 +167,14 @@ EXIT CODES
             _options.TryGetValue(name, out var value) && value.Length > 0 ? value : fallback;
 
         public bool Json => Has("json");
+
+        /// <summary>
+        /// `--pid` narrows to one specific editor process.
+        ///
+        /// Normally unnecessary: one project means one editor. It exists for the case where several
+        /// processes answer for the same path and the automatic choice is not the one you want.
+        /// </summary>
+        public int Pid => int.TryParse(Get("pid"), out var pid) && pid > 0 ? pid : 0;
     }
 
     internal static class StatusCommand
@@ -180,9 +190,9 @@ EXIT CODES
 
             // Stop listening the moment the wanted editor answers — see DiscoveryClient.Query.
             var replies = DiscoveryClient.Query(
-                satisfied: reply => project != null && ProjectPaths.Equal(reply.ProjectPath, project));
+                satisfied: ProjectResolver.Satisfies(project, args.Pid));
 
-            if (!ProjectResolver.TrySelect(replies, project, out var editor, out var error))
+            if (!ProjectResolver.TrySelect(replies, project, out var editor, out var error, args.Pid))
             {
                 if (args.Json)
                 {

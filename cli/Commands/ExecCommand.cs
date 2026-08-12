@@ -29,9 +29,9 @@ namespace Urc
             var timeout = ParseTimeout(args.Get("timeout"), TimeSpan.FromSeconds(120));
 
             var replies = DiscoveryClient.Query(
-                satisfied: r => project != null && ProjectPaths.Equal(r.ProjectPath, project));
+                satisfied: ProjectResolver.Satisfies(project, args.Pid));
 
-            if (!ProjectResolver.TrySelect(replies, project, out var editor, out var error))
+            if (!ProjectResolver.TrySelect(replies, project, out var editor, out var error, args.Pid))
             {
                 Program.Error(error);
                 return project == null ? ExitCode.Usage : ExitCode.Failed;
@@ -62,9 +62,9 @@ namespace Urc
             var timeout = ParseTimeout(args.Get("timeout"), TimeSpan.FromMinutes(5));
 
             var replies = DiscoveryClient.Query(
-                satisfied: r => project != null && ProjectPaths.Equal(r.ProjectPath, project));
+                satisfied: ProjectResolver.Satisfies(project, args.Pid));
 
-            if (!ProjectResolver.TrySelect(replies, project, out var editor, out var error))
+            if (!ProjectResolver.TrySelect(replies, project, out var editor, out var error, args.Pid))
             {
                 Program.Error(error);
                 return project == null ? ExitCode.Usage : ExitCode.Failed;
@@ -90,9 +90,9 @@ namespace Urc
             var timeout = ParseTimeout(args.Get("timeout"), TimeSpan.FromSeconds(120));
 
             var replies = DiscoveryClient.Query(
-                satisfied: r => project != null && ProjectPaths.Equal(r.ProjectPath, project));
+                satisfied: ProjectResolver.Satisfies(project, args.Pid));
 
-            if (!ProjectResolver.TrySelect(replies, project, out var editor, out var error))
+            if (!ProjectResolver.TrySelect(replies, project, out var editor, out var error, args.Pid))
             {
                 Program.Error(error);
                 return project == null ? ExitCode.Usage : ExitCode.Failed;
