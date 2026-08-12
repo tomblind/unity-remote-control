@@ -333,18 +333,34 @@ Write-Host "Done. Open the project in Unity, then from the project root:" -Foreg
 Write-Host "  .\.urc\urc.exe status"
 Write-Host ""
 
+# Verify what this install is actually responsible for: that every path it created is hidden.
+# NOT that the whole tree is clean - a working project usually has unrelated edits and untracked
+# files of its own, and reporting those as though the installer caused them is a false alarm.
 if ($excluded) {
     Push-Location $project
     try {
         $ErrorActionPreference = 'Continue'
-        $dirty = @(& git status --porcelain 2>$null)
-        if ($dirty.Count -gt 0) {
-            Write-Host "note: git status is not clean after install:" -ForegroundColor Yellow
-            $dirty | Select-Object -First 10 | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+
+        $mine = @(
+            "Assets/$InstallName"
+            "Assets/$InstallName.meta"
+            '.urc'
+            '.claude/skills/urc'
+        ) | Where-Object { Test-Path (Join-Path $project $_) }
+
+        $leaked = @()
+        foreach ($path in $mine) {
+            & git check-ignore -q -- $path 2>$null
+            if ($LASTEXITCODE -ne 0) { $leaked += $path }
+        }
+
+        if ($leaked.Count -gt 0) {
+            Write-Host "warning: these installed paths are NOT hidden from git:" -ForegroundColor Yellow
+            $leaked | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
             Write-Host "  Diagnose with: git check-ignore -v <path>" -ForegroundColor Yellow
         }
         else {
-            Note 'git status is clean.'
+            Note 'every installed path is hidden from git.'
         }
     }
     finally { Pop-Location }
