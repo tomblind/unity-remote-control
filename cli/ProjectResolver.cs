@@ -80,6 +80,21 @@ namespace Urc
         /// command. Anything else keeps the window open, and the full candidate set gets ranked.
         /// The healthy case still exits in milliseconds; only the suspicious case pays the window.
         /// </summary>
+        /// <summary>
+        /// "Did the editor we are looking for answer at all?" — no health check.
+        ///
+        /// Distinct from <see cref="Satisfies"/> on purpose. A busy editor has a stale tick and so
+        /// fails Satisfies, but it is still PRESENT, and retrying for it would add seconds to every
+        /// command issued during an import. Only a genuine absence is worth another query.
+        /// </summary>
+        public static Func<DiscoveryReply, bool> Present(string projectPath, int requiredPid) =>
+            reply =>
+            {
+                if (projectPath == null) return false;
+                if (!ProjectPaths.Equal(reply.ProjectPath, projectPath)) return false;
+                return requiredPid <= 0 || reply.Pid == requiredPid;
+            };
+
         public static Func<DiscoveryReply, bool> Satisfies(string projectPath, int requiredPid) =>
             reply =>
             {

@@ -28,8 +28,10 @@ namespace Urc
             var project = ProjectResolver.Resolve(args.Get("project"), out _);
             var timeout = ParseTimeout(args.Get("timeout"), TimeSpan.FromSeconds(120));
 
-            var replies = DiscoveryClient.Query(
-                satisfied: ProjectResolver.Satisfies(project, args.Pid));
+            var replies = DiscoveryClient.Locate(
+                ProjectResolver.Satisfies(project, args.Pid),
+                ProjectResolver.Present(project, args.Pid),
+                project);
 
             if (!ProjectResolver.TrySelect(replies, project, out var editor, out var error, args.Pid))
             {
@@ -61,8 +63,10 @@ namespace Urc
             var project = ProjectResolver.Resolve(args.Get("project"), out _);
             var timeout = ParseTimeout(args.Get("timeout"), TimeSpan.FromMinutes(5));
 
-            var replies = DiscoveryClient.Query(
-                satisfied: ProjectResolver.Satisfies(project, args.Pid));
+            var replies = DiscoveryClient.Locate(
+                ProjectResolver.Satisfies(project, args.Pid),
+                ProjectResolver.Present(project, args.Pid),
+                project);
 
             if (!ProjectResolver.TrySelect(replies, project, out var editor, out var error, args.Pid))
             {
@@ -89,8 +93,10 @@ namespace Urc
             var project = ProjectResolver.Resolve(args.Get("project"), out _);
             var timeout = ParseTimeout(args.Get("timeout"), TimeSpan.FromSeconds(120));
 
-            var replies = DiscoveryClient.Query(
-                satisfied: ProjectResolver.Satisfies(project, args.Pid));
+            var replies = DiscoveryClient.Locate(
+                ProjectResolver.Satisfies(project, args.Pid),
+                ProjectResolver.Present(project, args.Pid),
+                project);
 
             if (!ProjectResolver.TrySelect(replies, project, out var editor, out var error, args.Pid))
             {

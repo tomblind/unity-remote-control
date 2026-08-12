@@ -189,8 +189,10 @@ EXIT CODES
             var project = ProjectResolver.Resolve(args.Get("project"), out _);
 
             // Stop listening the moment the wanted editor answers — see DiscoveryClient.Query.
-            var replies = DiscoveryClient.Query(
-                satisfied: ProjectResolver.Satisfies(project, args.Pid));
+            var replies = DiscoveryClient.Locate(
+                ProjectResolver.Satisfies(project, args.Pid),
+                ProjectResolver.Present(project, args.Pid),
+                project);
 
             if (!ProjectResolver.TrySelect(replies, project, out var editor, out var error, args.Pid))
             {

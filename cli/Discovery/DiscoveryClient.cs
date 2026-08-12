@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Threading;
 using Urc.Protocol;
 
 namespace Urc.Discovery
@@ -41,6 +42,109 @@ namespace Urc.Discovery
         /// The failure path still waits the whole window: concluding "not running" early would be
         /// wrong, and the full set is needed to tell the caller which editors ARE running.
         /// </param>
+        /// <summary>
+        /// How long to keep re-querying when the editor we want does not answer at all.
+        ///
+        /// A single query is ONE SAMPLE, and there are several ways to miss: during a domain reload
+        /// the responder genuinely does not exist (measured at roughly half a second), and a loopback
+        /// datagram can be dropped outright when the editor is saturated by an import. Both present
+        /// identically — "no editor running" for an editor that is plainly there — and both clear on
+        /// the next call, which is why they read as flakiness.
+        ///
+        /// So retry here instead of making the caller do it. The cost is paid only on a miss: a
+        /// successful lookup still returns in milliseconds.
+        /// </summary>
+        /// Sized against the gap it exists to cover — a domain reload leaves no responder for roughly
+        /// half a second — not against how long we are willing to wait. Every miss costs this in
+        /// full, INCLUDING the common, legitimate case of "Unity simply is not running", so a
+        /// generous budget would tax the wrong thing.
+        private static readonly TimeSpan MissRetryBudget = TimeSpan.FromMilliseconds(1500);
+
+        private static readonly TimeSpan MissRetryGap = TimeSpan.FromMilliseconds(120);
+
+        /// <summary>
+        /// Queries, retrying while <paramref name="present"/> finds nothing.
+        ///
+        /// `satisfied` ends the listening window early (the fast path); `present` decides whether the
+        /// thing we came for answered AT ALL. They differ deliberately: a busy editor may fail
+        /// `satisfied` (its tick is stale) yet still be present, and retrying that would add seconds
+        /// to every command issued during an import.
+        /// </summary>
+        public static List<DiscoveryReply> Locate(
+            Func<DiscoveryReply, bool> satisfied,
+            Func<DiscoveryReply, bool> present,
+            string projectPath = null,
+            TimeSpan? patience = null)
+        {
+            var started = DateTime.UtcNow;
+            var shortDeadline = started + MissRetryBudget;
+            var reloadDeadline = started + (patience ?? ReloadPatience);
+            var announced = false;
+            List<DiscoveryReply> last;
+
+            while (true)
+            {
+                last = Query(satisfied: satisfied);
+
+                if (present == null) return last;
+
+                foreach (var reply in last)
+                {
+                    if (!present(reply)) continue;
+                    EditorHint.Remember(reply);      // so a future miss can be diagnosed
+                    return last;
+                }
+
+                // Nothing answered for this project. Whether that is worth waiting out depends
+                // entirely on whether the editor still EXISTS.
+                var hintedPid = 0;
+                var reloading = projectPath != null &&
+                                EditorHint.LastEditorStillAlive(projectPath, out hintedPid);
+
+                if (reloading)
+                {
+                    if (DateTime.UtcNow >= reloadDeadline) return last;
+
+                    if (!announced)
+                    {
+                        announced = true;
+                        // Say something: a silent 30s wait is indistinguishable from a hang.
+                        Console.Error.WriteLine(
+                            $"note: editor (pid {hintedPid}) is alive but not answering — probably reloading. Waiting…");
+                    }
+
+                    Thread.Sleep(MissRetryGap);
+                    continue;
+                }
+
+                // No known editor process, or none running at all: the answer will not change.
+                if (!AnyUnityProcess()) return last;
+                if (DateTime.UtcNow >= shortDeadline) return last;
+
+                Thread.Sleep(MissRetryGap);
+            }
+        }
+
+        /// <summary>
+        /// How long to wait on an editor that is provably alive but silent.
+        ///
+        /// Generous, because the thing being waited on is genuinely slow: a domain reload in a large
+        /// project was measured at roughly 30 seconds of continuous silence. This only ever applies
+        /// when the process is confirmed alive, so it cannot be spent on an editor that is gone.
+        /// </summary>
+        private static readonly TimeSpan ReloadPatience = TimeSpan.FromSeconds(90);
+
+        /// <summary>
+        /// Whether any Unity editor process exists. Deliberately conservative: an enumeration that
+        /// fails reports true, so a permissions problem degrades into retrying rather than into a
+        /// false "not running".
+        /// </summary>
+        private static bool AnyUnityProcess()
+        {
+            try { return Process.GetProcessesByName("Unity").Length > 0; }
+            catch (Exception) { return true; }
+        }
+
         public static List<DiscoveryReply> Query(
             TimeSpan? window = null,
             Func<DiscoveryReply, bool> satisfied = null)
