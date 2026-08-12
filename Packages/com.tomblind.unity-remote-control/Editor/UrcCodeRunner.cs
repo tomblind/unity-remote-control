@@ -66,7 +66,8 @@ namespace Urc.Editor
             _loader = null;
         }
 
-        public static async Task<RunResult> RunAsync(string code, IEnumerable<string> extraUsings)
+        public static async Task<RunResult> RunAsync(string code, IEnumerable<string> extraUsings,
+            Dictionary<string, string> args = null)
         {
             if (string.IsNullOrWhiteSpace(code))
                 return new RunResult { Status = UrcProtocol.Status.Failed, Summary = "empty snippet." };
@@ -78,7 +79,7 @@ namespace Urc.Editor
                 if (extra.Length > 0) options = options.AddImports(extra);
             }
 
-            var attempt = await TryRun(code, options);
+            var attempt = await TryRun(code, options, args);
             if (attempt.Diagnostics == null) return attempt.Result;
 
             // One retry with an auto-resolved using. This exists purely to save a round trip: a
@@ -94,7 +95,7 @@ namespace Urc.Editor
 
             if (resolved.Count == 0) return Failure(attempt.Diagnostics);
 
-            var retry = await TryRun(code, options.AddImports(resolved));
+            var retry = await TryRun(code, options.AddImports(resolved), args);
             if (retry.Diagnostics != null) return Failure(retry.Diagnostics);
 
             retry.Result.AutoUsings = resolved;
@@ -108,12 +109,16 @@ namespace Urc.Editor
             public List<Diagnostic> Diagnostics;
         }
 
-        private static async Task<Attempt> TryRun(string code, ScriptOptions options)
+        private static async Task<Attempt> TryRun(string code, ScriptOptions options,
+            Dictionary<string, string> args)
         {
             Script<object> script;
             try
             {
-                script = CSharpScript.Create<object>(code, options, globalsType: null,
+                // globalsType is CONSTANT across every snippet, so it does not disturb source-hash caching
+                // — which is the whole point of passing parameters this way rather than baking
+                // them into the source.
+                script = CSharpScript.Create<object>(code, options, globalsType: typeof(UrcGlobals),
                     assemblyLoader: GetAssemblyLoader());
             }
             catch (Exception ex)
@@ -139,7 +144,7 @@ namespace Urc.Editor
 
             try
             {
-                var state = await script.RunAsync(catchException: null);
+                var state = await script.RunAsync(new UrcGlobals(args), catchException: null);
 
                 // A large top-level string spills in FULL to an artifact rather than being clipped:
                 // it is the documented escape hatch for "give me everything", so silently truncating

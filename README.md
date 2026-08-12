@@ -42,6 +42,7 @@ with `dotnet publish cli/Urc.csproj -r win-x64 -c Release`.
 | | |
 |---|---|
 | `urc exec --code '<C#>'` | Run C# on the editor main thread; block until it answers |
+| `urc exec --file s.cs --arg w=1920` | Parameters beside the source, so the snippet stays identical |
 | `urc compile` | Tell Unity files changed; exit 0 only if the project builds |
 | `urc status [--all]` | Editor state, generation, pending job |
 | `urc logs [--since \| --errors \| --tail]` | Captured console, read straight off disk |

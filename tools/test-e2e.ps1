@@ -108,6 +108,29 @@ Check 'exec - reads the snippet from stdin' {
     } finally { Stop-Fake $f }
 }
 
+# --- parameters travel beside the source, not inside it -------------------------------------
+# Repeatable flags are the trap here: the parser keeps only the last value per name, so without
+# explicit handling `--arg a=1 --arg b=2` silently drops one. And a value may contain '=' or '/'.
+Check 'exec --arg passes parameters without touching the source' {
+    $f = Start-Fake @('--project', $projA, '--seconds', '12', '--exec-delay', '50')
+    try {
+        $r = Invoke-Urc @('exec', '--code', 'return 1;', '--project', $projA,
+                          '--arg', 'width=1920', '--arg', 'path=C:/a b/img.png', '--arg', 'eq=a=b')
+        Assert ($r.ExitCode -eq 0) "expected exit 0, got $($r.ExitCode): $($r.Output)"
+
+        # All three must arrive: repeated flags kept, slashes and spaces intact, and a value
+        # containing '=' split only on the FIRST one.
+        Assert ($r.Output -match 'width=1920') "width missing: $($r.Output)"
+        Assert ($r.Output -match [regex]::Escape('path=C:/a b/img.png')) "path mangled: $($r.Output)"
+        Assert ($r.Output -match [regex]::Escape('eq=a=b')) "value containing '=' was split wrongly: $($r.Output)"
+
+        # A malformed --args must fail loudly: falling back to defaults would run the snippet with
+        # the wrong inputs and look like it worked.
+        $bad = Invoke-Urc @('exec', '--code', 'return 1;', '--project', $projA, '--args', 'not-json')
+        Assert ($bad.ExitCode -ne 0) "malformed --args was accepted silently"
+    } finally { Stop-Fake $f }
+}
+
 # --- the one the whole design exists for ----------------------------------------------------
 Check 'exec survives a domain reload mid-job (reconnect + re-attach)' {
     $f = Start-Fake @('--project', $projA, '--seconds', '15', '--exec-delay', '600', '--reload-after', '200')

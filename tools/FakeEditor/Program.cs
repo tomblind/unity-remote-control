@@ -31,6 +31,8 @@ namespace Urc.FakeEditor
             public bool Done;
             public string Status = UrcProtocol.Status.Ok;
             public Json Value;
+            /// <summary>Echoed back so the CLI's --arg parsing can be asserted without running C#.</summary>
+            public string ArgsEcho = "";
         }
 
         private static readonly ConcurrentDictionary<string, Job> Jobs = new ConcurrentDictionary<string, Job>();
@@ -204,7 +206,7 @@ namespace Urc.FakeEditor
 
             switch (op)
             {
-                case UrcProtocol.Op.Exec: HandleExec(writer, jobId); break;
+                case UrcProtocol.Op.Exec: HandleExec(writer, jobId, request); break;
                 case UrcProtocol.Op.Attach: HandleAttach(writer, jobId); break;
                 default:
                     Write(writer, Json.Object().Set("ev", UrcProtocol.Ev.Error).Set("message", $"unknown op '{op}'"));
@@ -212,9 +214,15 @@ namespace Urc.FakeEditor
             }
         }
 
-        private static void HandleExec(StreamWriter writer, string jobId)
+        private static void HandleExec(StreamWriter writer, string jobId, Json request)
         {
             var job = Jobs.GetOrAdd(jobId, id => new Job { Id = id });
+
+            // Echo the parameters so a test can assert them without evaluating any C#.
+            var pairs = new System.Collections.Generic.List<string>();
+            foreach (var field in request["args"].Fields) pairs.Add(field.Key + "=" + field.Value.AsString(""));
+            pairs.Sort();
+            job.ArgsEcho = string.Join(",", pairs.ToArray());
             _pendingJobId = jobId;
             _lastJobId = jobId;
             _state = UrcProtocol.State.Busy;
@@ -295,7 +303,9 @@ namespace Urc.FakeEditor
 
         private static void Finish(Job job)
         {
-            job.Value = Json.String("fake-result");
+            job.Value = Json.String(string.IsNullOrEmpty(job.ArgsEcho)
+                ? "fake-result"
+                : "fake-result args[" + job.ArgsEcho + "]");
             job.Done = true;
             _pendingJobId = null;
             _state = UrcProtocol.State.Idle;

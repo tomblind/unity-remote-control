@@ -412,6 +412,12 @@ namespace Urc.Editor
                 if (!string.IsNullOrEmpty(value)) usings.Add(value);
             }
 
+            // Parameters travel beside the source, never inside it — which is what lets a reusable
+            // snippet stay byte-identical across invocations.
+            var snippetArgs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var field in request["args"].Fields)
+                snippetArgs[field.Key] = field.Value.AsString("");
+
             var job = UrcJob.Create(jobId, UrcProtocol.Op.Exec, connection.ClientPid);
             job.State = UrcJobState.Running;
             job.Detail = code;
@@ -440,7 +446,7 @@ namespace Urc.Editor
 
                 try
                 {
-                    var run = await UrcCodeRunner.RunAsync(code, usings);
+                    var run = await UrcCodeRunner.RunAsync(code, usings, snippetArgs);
                     job.Complete(run.Status, run.Summary, run.Value);
                     job.ValueArtifact = run.ValueArtifact;
                 }

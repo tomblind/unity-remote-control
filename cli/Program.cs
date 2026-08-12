@@ -78,12 +78,21 @@ COMMANDS
 
 EXEC
   urc exec --code 'Debug.Log(""hi""); return 2 + 2;'
-  urc exec --file snippet.cs
+  urc exec --file snippet.cs --arg width=1920 --arg path=C:/shots/a.png
   cat snippet.cs | urc exec -
+
+  PARAMETERISE WITH --arg, NEVER by building values into the source. A snippet
+  that is byte-identical on every call can be compiled once and reused; one with
+  values baked in is a new compilation every time, and each leaks an assembly
+  that cannot be unloaded until the next domain reload. It also spares you two
+  levels of shell escaping.
 
   --code <c#>         The snippet. Preferred for anything short: it shows a human
                       approving the call exactly what will run.
   --file <path>       Read the snippet from a file.
+  --arg name=value    A parameter, repeatable. Read inside the snippet with
+                      Arg/ArgInt/ArgFloat/ArgBool/RequireArg — no using needed.
+  --args <json>       The same, as one JSON object. --arg wins on conflict.
   --using <ns,ns>     Extra namespaces. Unambiguous ones are resolved automatically.
   --timeout <secs>    Bound the CLI's wait (default 120). Never aborts the job —
                       main-thread work cannot be cancelled; use `urc resume` after.
@@ -129,6 +138,13 @@ EXIT CODES
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _positional = new List<string>();
 
+        /// <summary>
+        /// Every occurrence, in order — `_options` keeps only the last. Needed for repeatable flags
+        /// like `--arg k=v --arg j=w`, where overwriting would silently drop all but the final one.
+        /// </summary>
+        private readonly List<KeyValuePair<string, string>> _all =
+            new List<KeyValuePair<string, string>>();
+
         public Args(string[] args)
         {
             for (var i = 0; i < args.Length; i++)
@@ -149,7 +165,10 @@ EXIT CODES
                 var eq = name.IndexOf('=');
                 if (eq >= 0)
                 {
-                    _options[name.Substring(0, eq)] = name.Substring(eq + 1);
+                    var key = name.Substring(0, eq);
+                    var val = name.Substring(eq + 1);
+                    _options[key] = val;
+                    _all.Add(new KeyValuePair<string, string>(key, val));
                     continue;
                 }
 
@@ -162,6 +181,8 @@ EXIT CODES
                 {
                     _options[name] = "";
                 }
+
+                _all.Add(new KeyValuePair<string, string>(name, _options[name]));
             }
         }
 
@@ -173,6 +194,14 @@ EXIT CODES
             _options.TryGetValue(name, out var value) && value.Length > 0 ? value : fallback;
 
         public bool Json => Has("json");
+
+        /// <summary>Every value given for a repeatable flag, in command-line order.</summary>
+        public IEnumerable<string> GetAll(string name)
+        {
+            foreach (var pair in _all)
+                if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase))
+                    yield return pair.Value;
+        }
 
         /// <summary>
         /// `--pid` narrows to one specific editor process.

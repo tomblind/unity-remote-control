@@ -49,6 +49,8 @@ Results persist in your context for the entire session, so keep them small.
 ```bash
 urc exec --code '<C#>'          # run C#, block until it answers
 urc exec --file snippet.cs      # multi-line C# (avoids shell quoting pain)
+urc exec --file s.cs --arg w=8  # parameters, repeatable — see below
+cat snippet.cs | urc exec -     # snippet from stdin
 urc compile                     # tell Unity files changed; exit 0 only if it builds
 urc status                      # editor state, generation, pending job
 urc status --all                # every running editor on this machine
@@ -72,6 +74,36 @@ urc compile          # exit 0 = builds; exit 1 = errors, listed and deduplicated
 
 Errors are deduplicated: one missing type produces hundreds of call-site errors, so you see the
 *distinct* problems first. **A failed compile reloads nothing — the old code stays live.**
+
+## Parameterise with `--arg`, never by building values into the source
+
+A reusable snippet takes its inputs beside the source, not inside it:
+
+```bash
+urc exec --file screenshot.cs --arg width=1920 --arg path=C:/shots/a.png
+```
+
+```csharp
+// screenshot.cs — byte-identical on every call
+var width = ArgInt("width", 1280);
+var path  = Arg("path", "Temp/shot.png");
+var debug = ArgBool("debug");
+```
+
+Available inside every snippet, no `using` required:
+`Arg(name, fallback)` · `ArgInt` · `ArgLong` · `ArgFloat` · `ArgBool` · `RequireArg(name)` (throws if
+missing) · `HasArg(name)` · `Args` (the whole dictionary).
+
+**Do not interpolate values into the snippet text.** It looks simpler and costs more:
+
+- Quoting differs per shell, and anything with a slash or a quote has to survive two levels of it.
+- Every distinct value produces distinct source, so the snippet is recompiled on every call and each
+  compile leaks an assembly that cannot be freed until the next domain reload. Identical source is
+  what makes reuse possible at all.
+
+`--arg` is repeatable, splits on the first `=` only (so values may contain more), and needs no
+quoting for slashes or spaces. `--args '<json object>'` takes the same parameters in one blob, but
+your shell may strip its quotes — prefer `--arg`.
 
 ## Reusable operations belong in the project, not in a snippet
 

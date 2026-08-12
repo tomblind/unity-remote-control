@@ -283,6 +283,9 @@ namespace Urc
 
                 if (_args.Has("no-settle")) frame.Set("noSettle", true);
 
+                var snippetArgs = SnippetArgs(_args);
+                if (snippetArgs.Count > 0) frame.Set("args", snippetArgs);
+
                 if (_usings != null && _usings.Count > 0)
                 {
                     var array = Json.Array();
@@ -447,6 +450,60 @@ namespace Urc
                     (_submitted ? $" before job {_jobId} finished." : "."));
                 return ExitCode.Unavailable;
             }
+        }
+
+        /// <summary>
+        /// Collects `--arg name=value` (repeatable) and `--args '<json object>'` into the frame.
+        ///
+        /// Parameters go BESIDE the source rather than inside it. Interpolating them into the
+        /// snippet means the shell has to survive two levels of escaping — different on every
+        /// platform, and painful for anything containing a slash or a quote — and, more importantly,
+        /// every distinct value produces distinct source, so a compiled-snippet cache could never
+        /// hit and each call would leak another assembly. Passed this way, a reusable snippet is
+        /// byte-identical on every invocation.
+        /// </summary>
+        private static Json SnippetArgs(Args args)
+        {
+            var result = Json.Object();
+
+            // --args '{"width":1920}' first, so an explicit --arg can override a blob entry.
+            var blob = args.Get("args");
+            if (!string.IsNullOrWhiteSpace(blob))
+            {
+                if (!Json.TryParse(blob, out var parsed) || parsed.ValueKind != Json.Kind.Object)
+                {
+                    // Loudly, because the shell is the likely culprit and the symptom is invisible:
+                    // PowerShell strips the inner quotes from '{"a":1}', leaving something that is
+                    // not JSON, and silently falling back to defaults makes a snippet quietly run
+                    // with the wrong inputs. --arg avoids the problem entirely.
+                    throw new ArgumentException(
+                        "--args is not a JSON object: " + blob + "\n" +
+                        "  Your shell probably stripped the quotes. Prefer --arg name=value, which " +
+                        "needs no quoting.");
+                }
+
+                foreach (var field in parsed.Fields)
+                    result.Set(field.Key, Json.String(field.Value.AsString("")));
+            }
+
+            foreach (var pair in args.GetAll("arg"))
+            {
+                if (string.IsNullOrEmpty(pair)) continue;
+
+                // Split on the FIRST '=' only: a value may legitimately contain more of them.
+                var eq = pair.IndexOf('=');
+                if (eq <= 0)
+                {
+                    // A bare `--arg name` is almost certainly a typo for a flag-style parameter;
+                    // treat it as present-and-empty, which ArgBool reads as true.
+                    result.Set(pair, Json.String(""));
+                    continue;
+                }
+
+                result.Set(pair.Substring(0, eq), Json.String(pair.Substring(eq + 1)));
+            }
+
+            return result;
         }
 
         /// <summary>
