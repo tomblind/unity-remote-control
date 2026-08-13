@@ -91,7 +91,11 @@ EXEC
 
   --code <c#>         The snippet. Preferred for anything short: it shows a human
                       approving the call exactly what will run.
-  --file <path>       Read the snippet from a file.
+  --file <path>       Read the snippet from a file. REPEATABLE: sources combine in
+                      order, with --code last, so snippet files can declare methods
+                      and --code can call them:
+                        urc exec --file capture.cs --file report.cs
+                                 --code 'return Report(Capture(1920));'
   --arg name=value    A parameter, repeatable. Read inside the snippet with
                       Arg/ArgInt/ArgFloat/ArgBool/RequireArg — no using needed.
   --args <json>       The same, as one JSON object. --arg wins on conflict.

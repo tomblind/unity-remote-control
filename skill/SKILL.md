@@ -78,12 +78,37 @@ urc compile          # exit 0 = builds; exit 1 = errors, listed and deduplicated
 Errors are deduplicated: one missing type produces hundreds of call-site errors, so you see the
 *distinct* problems first. **A failed compile reloads nothing — the old code stays live.**
 
+## Snippets are methods; compose them in one call
+
+`--file` is repeatable and the sources combine in order, with `--code` last. So write each snippet
+as a **method**, and let `--code` call whichever ones the task needs:
+
+```csharp
+// capture.cs
+string Capture(int width) { /* ... */ }
+```
+```csharp
+// report.cs
+string Report(string what) { /* ... */ }
+```
+```bash
+urc exec --file capture.cs --file report.cs --code "return Report(Capture(1920));"
+```
+
+That is what makes a skill's snippets batchable. Without it, two snippets meant either two round
+trips or pasting their contents together and abandoning the files.
+
+Top-level methods are legal in a snippet, and `--arg` values are readable inside them, so a snippet
+file is naturally a small library. If a compile fails, the error's line numbers refer to the
+combined text and `urc` prints which file each range came from.
+
 ## One snippet, one job
 
 Prefer several short, focused snippets over one long snippet with flags choosing between paths. A
 snippet that branches on `--arg mode=...` is the worst shape available: only one branch ever runs,
 the whole thing must still be read and approved by whoever is watching, and it is far easier to get
-subtly wrong than three small snippets each doing one thing.
+subtly wrong than three small snippets each doing one thing — which you can now combine per task
+anyway.
 
 Keep them short. Compile time scales with snippet length — a handful of lines costs about 76ms,
 sixty lines about 350ms — so length is a real cost paid on every call, not just clutter.

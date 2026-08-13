@@ -131,6 +131,28 @@ Check 'exec --arg passes parameters without touching the source' {
     } finally { Stop-Fake $f }
 }
 
+# --- composing several snippet files into one call ------------------------------------------
+# A skill ships snippets as files; without composition an agent must spend a round trip per
+# snippet, or paste their contents together and lose the files. Order is the contract: files in
+# command-line order, --code LAST so it can call what they declared.
+Check 'multiple --file sources combine in order with --code last' {
+    $f = Start-Fake @('--project', $projA, '--seconds', '12', '--exec-delay', '50')
+    try {
+        $one = Join-Path $env:TEMP 'urc-compose-1.cs'
+        $two = Join-Path $env:TEMP 'urc-compose-2.cs'
+        Set-Content $one -Encoding utf8 -Value 'int First() { return 1; }'
+        Set-Content $two -Encoding utf8 -Value 'int Second() { return 2; }'
+
+        $r = Invoke-Urc @('exec', '--file', $one, '--file', $two,
+                          '--code', 'return First() + Second();', '--project', $projA)
+        Assert ($r.ExitCode -eq 0) "expected exit 0, got $($r.ExitCode): $($r.Output)"
+
+        # The fake echoes the first and last line it received.
+        Assert ($r.Output -match 'int First') "first file is not first: $($r.Output)"
+        Assert ($r.Output -match 'return First\(\) \+ Second\(\)') "--code is not last: $($r.Output)"
+    } finally { Stop-Fake $f }
+}
+
 # --- the one the whole design exists for ----------------------------------------------------
 Check 'exec survives a domain reload mid-job (reconnect + re-attach)' {
     $f = Start-Fake @('--project', $projA, '--seconds', '15', '--exec-delay', '600', '--reload-after', '200')

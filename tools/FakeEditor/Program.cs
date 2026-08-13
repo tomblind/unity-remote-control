@@ -33,6 +33,8 @@ namespace Urc.FakeEditor
             public Json Value;
             /// <summary>Echoed back so the CLI's --arg parsing can be asserted without running C#.</summary>
             public string ArgsEcho = "";
+            /// <summary>First and last line of the received source, to assert how sources were combined.</summary>
+            public string CodeEcho = "";
         }
 
         private static readonly ConcurrentDictionary<string, Job> Jobs = new ConcurrentDictionary<string, Job>();
@@ -223,6 +225,12 @@ namespace Urc.FakeEditor
             foreach (var field in request["args"].Fields) pairs.Add(field.Key + "=" + field.Value.AsString(""));
             pairs.Sort();
             job.ArgsEcho = string.Join(",", pairs.ToArray());
+
+            // Order matters: files in command-line order, then --code last so it can call them.
+            var code = (request["code"].AsString("") ?? "").Replace("\r", "");
+            var lines = new System.Collections.Generic.List<string>();
+            foreach (var l in code.Split('\n')) if (l.Trim().Length > 0) lines.Add(l.Trim());
+            if (lines.Count > 0) job.CodeEcho = lines[0] + " .. " + lines[lines.Count - 1];
             _pendingJobId = jobId;
             _lastJobId = jobId;
             _state = UrcProtocol.State.Busy;
@@ -303,9 +311,9 @@ namespace Urc.FakeEditor
 
         private static void Finish(Job job)
         {
-            job.Value = Json.String(string.IsNullOrEmpty(job.ArgsEcho)
-                ? "fake-result"
-                : "fake-result args[" + job.ArgsEcho + "]");
+            job.Value = Json.String("fake-result"
+                + (string.IsNullOrEmpty(job.ArgsEcho) ? "" : " args[" + job.ArgsEcho + "]")
+                + (string.IsNullOrEmpty(job.CodeEcho) ? "" : " code[" + job.CodeEcho + "]"));
             job.Done = true;
             _pendingJobId = null;
             _state = UrcProtocol.State.Idle;

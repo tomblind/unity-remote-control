@@ -22,8 +22,8 @@ namespace Urc
     {
         public static int Run(Args args)
         {
-            var code = ReadCode(args, out var codeError);
-            if (code == null) { Program.Error(codeError); return ExitCode.Usage; }
+            var snippet = ReadCode(args, out var codeError);
+            if (snippet == null) { Program.Error(codeError); return ExitCode.Usage; }
 
             var project = ProjectResolver.Resolve(args.Get("project"), out _);
             var timeout = ParseTimeout(args.Get("timeout"), TimeSpan.FromSeconds(120));
@@ -47,7 +47,10 @@ namespace Urc
             // job whether we are submitting it or reconnecting to it.
             var jobId = "J" + Guid.NewGuid().ToString("N").Substring(0, 8);
 
-            return new Session(editor, jobId, code, usings, timeout, args).Run();
+            return new Session(editor, jobId, snippet.Code, usings, timeout, args)
+            {
+                SourceMap = snippet.Map
+            }.Run();
         }
 
         /// <summary>
@@ -142,6 +145,15 @@ namespace Urc
 
             /// <summary>`compile` for the compile command; `exec` otherwise.</summary>
             public string Op = UrcProtocol.Op.Exec;
+
+            /// <summary>
+            /// Which source each line range of a combined snippet came from.
+            ///
+            /// Compiler diagnostics number lines in the COMBINED text, which is meaningless to a
+            /// caller who passed three files — so the mapping is printed alongside a compile failure.
+            /// Empty when only one source was given, where the numbers already line up.
+            /// </summary>
+            public List<string> SourceMap;
 
             public Session(DiscoveryReply editor, string jobId, string code, List<string> usings,
                 TimeSpan timeout, Args args)
@@ -384,6 +396,7 @@ namespace Urc
 
                     default:
                         Program.Error(summary ?? "the snippet failed.");
+                        PrintSourceMap();
                         PrintCompile(compile);
                         return ExitCode.Failed;
                 }
@@ -409,6 +422,15 @@ namespace Urc
 
                 var status = result?["status"].AsString(UrcProtocol.Status.Ok) ?? UrcProtocol.Status.Ok;
                 return status == UrcProtocol.Status.Ok ? ExitCode.Ok : ExitCode.Failed;
+            }
+
+            /// <summary>Turns "error on line 34" into something locatable when sources were combined.</summary>
+            private void PrintSourceMap()
+            {
+                if (SourceMap == null || SourceMap.Count < 2) return;
+
+                Console.Error.WriteLine("  combined from:");
+                foreach (var entry in SourceMap) Console.Error.WriteLine("    " + entry);
             }
 
             private void PrintCompile(Json compile)
@@ -509,18 +531,34 @@ namespace Urc
         /// <summary>
         /// --code is the reviewable form: it shows a human approving the call exactly what will run.
         /// --file and stdin exist because multi-line C# through a shell hits real escaping pain.
+        ///
+        /// SOURCES COMBINE, in command-line order, with --code last. That is what lets a skill ship
+        /// snippets as a small library and an agent compose them in ONE call:
+        ///
+        ///   urc exec --file capture.cs --file report.cs --code "Capture(1920); return Report();"
+        ///
+        /// Without it a skill's snippets could not be batched at all — an agent had to spend a round
+        /// trip per snippet, or paste their contents together and lose the files entirely.
+        /// Top-level method declarations are legal in a submission and --arg globals reach inside
+        /// them, so a snippet file is naturally a set of callable methods (both verified).
         /// </summary>
-        private static string ReadCode(Args args, out string error)
+        private sealed class Snippet
+        {
+            public string Code;
+            /// <summary>Which source each line range came from; only needed to explain a compile error.</summary>
+            public List<string> Map = new List<string>();
+        }
+
+        private static Snippet ReadCode(Args args, out string error)
         {
             error = null;
 
-            var inline = args.Get("code");
-            if (!string.IsNullOrEmpty(inline)) return inline;
+            var parts = new List<KeyValuePair<string, string>>();
 
-            var file = args.Get("file");
-            if (!string.IsNullOrEmpty(file))
+            foreach (var file in args.GetAll("file"))
             {
-                try { return File.ReadAllText(file); }
+                if (string.IsNullOrEmpty(file)) continue;
+                try { parts.Add(new KeyValuePair<string, string>(file, File.ReadAllText(file))); }
                 catch (Exception ex) { error = $"could not read '{file}': {ex.Message}"; return null; }
             }
 
@@ -529,21 +567,50 @@ namespace Urc
                 if (positional != "-") continue;
 
                 // Without a pipe, ReadToEnd would block on the terminal and look like a hang.
-                if (Console.IsInputRedirected)
+                var piped = Console.IsInputRedirected ? Console.In.ReadToEnd() : null;
+                if (string.IsNullOrWhiteSpace(piped))
                 {
-                    var piped = Console.In.ReadToEnd();
-                    if (!string.IsNullOrWhiteSpace(piped)) return piped;
+                    // Empty stdin would otherwise reach the editor as an empty snippet and come back
+                    // as a server-side "exec requires 'code'", pointing at the wrong end.
+                    error = "`exec -` reads the snippet from stdin, but nothing arrived.\n" +
+                            "  Try:  echo 'return 1;' | urc exec -";
+                    return null;
                 }
 
-                // Empty stdin would otherwise travel to the editor as an empty snippet and come back
-                // as a server-side "exec requires 'code'", which points at the wrong end.
-                error = "`exec -` reads the snippet from stdin, but nothing arrived.\n" +
-                        "  Try:  echo 'return 1;' | urc exec -";
+                parts.Add(new KeyValuePair<string, string>("<stdin>", piped));
+                break;
+            }
+
+            // Last, so it can call whatever the files declared.
+            var inline = args.Get("code");
+            if (!string.IsNullOrEmpty(inline))
+                parts.Add(new KeyValuePair<string, string>("--code", inline));
+
+            if (parts.Count == 0)
+            {
+                error = "exec needs code: --code '<C#>', --file <path> (repeatable), or - to read stdin.";
                 return null;
             }
 
-            error = "exec needs code: --code '<C#>', --file <path>, or - to read stdin.";
-            return null;
+            var snippet = new Snippet();
+            var builder = new System.Text.StringBuilder();
+            var line = 1;
+
+            foreach (var part in parts)
+            {
+                // Normalise line endings so the line map matches what the compiler will count.
+                var text = part.Value.Replace("\r\n", "\n").TrimEnd('\n');
+                var lines = text.Length == 0 ? 0 : text.Split('\n').Length;
+
+                if (parts.Count > 1)
+                    snippet.Map.Add($"{part.Key}: lines {line}-{line + Math.Max(0, lines - 1)}");
+
+                builder.Append(text).Append('\n');
+                line += lines;
+            }
+
+            snippet.Code = builder.ToString();
+            return snippet;
         }
 
         private static TimeSpan ParseTimeout(string value, TimeSpan fallback)
