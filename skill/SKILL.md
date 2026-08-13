@@ -28,6 +28,15 @@ urc exec --code 'return GameObject.Find("Player").transform.position.ToString();
 **Prefer documented helpers over exploring.** Don't reflection-scan or read source to discover an
 API when the project's own guidance names one.
 
+**Never split a batch to make a snippet cacheable.** Batching wins by far the larger margin: an
+extra call costs a whole conversation turn, while a fresh compile costs milliseconds. Combining
+operations into one snippet makes it unique, and that is fine.
+
+What keeps a composed batch cheap is where the *work* lives. Compile time scales with snippet size,
+so a batch that calls into project code stays fast even though it is unique — measured at ~76ms,
+the same as a cached snippet — while one that inlines sixty lines of logic costs ~350ms. Put the
+logic in the project and compose thin call lines.
+
 ## Output budget
 
 Results persist in your context for the entire session, so keep them small.
@@ -124,6 +133,10 @@ urc exec --code 'return ProjectTools.FindBrokenPrefabs();'
 
 `exec` references every assembly loaded in the editor, so project code is callable with no setup,
 and the compiler checks your arguments.
+
+This is also what makes batching cheap. A batch composed of one-line calls into project code is a
+small snippet, so it compiles in roughly the time a cached one takes to run — the heavy code was
+compiled once by Unity, not by Roslyn on every call.
 
 ## Writing snippets
 
