@@ -49,7 +49,7 @@ namespace Urc
 
             return new Session(editor, jobId, snippet.Code, usings, timeout, args)
             {
-                SourceMap = snippet.Map
+                SourceMap = snippet.Sources
             }.Run();
         }
 
@@ -146,14 +146,8 @@ namespace Urc
             /// <summary>`compile` for the compile command; `exec` otherwise.</summary>
             public string Op = UrcProtocol.Op.Exec;
 
-            /// <summary>
-            /// Which source each line range of a combined snippet came from.
-            ///
-            /// Compiler diagnostics number lines in the COMBINED text, which is meaningless to a
-            /// caller who passed three files — so the mapping is printed alongside a compile failure.
-            /// Empty when only one source was given, where the numbers already line up.
-            /// </summary>
-            public List<string> SourceMap;
+            /// <summary>Where each source landed in the combined text. See <see cref="SourceSpan"/>.</summary>
+            public List<SourceSpan> SourceMap;
 
             public Session(DiscoveryReply editor, string jobId, string code, List<string> usings,
                 TimeSpan timeout, Args args)
@@ -295,6 +289,24 @@ namespace Urc
 
                 if (_args.Has("no-settle")) frame.Set("noSettle", true);
 
+                // Sent only when several sources were combined. The editor window uses these to
+                // split the request back into one foldout per snippet — a 200-line concatenation of
+                // three files and a --code tail is not something a person can scan, and the window
+                // exists precisely so a person can see what an agent ran. With a single source the
+                // plain pane already shows exactly that, so the field stays off the wire.
+                if (SourceMap != null && SourceMap.Count > 1)
+                {
+                    var sources = Json.Array();
+                    foreach (var span in SourceMap)
+                    {
+                        sources.Add(Json.Object()
+                            .Set("name", span.Name)
+                            .Set("line", span.StartLine)
+                            .Set("lines", span.LineCount));
+                    }
+                    frame.Set("sources", sources);
+                }
+
                 var snippetArgs = SnippetArgs(_args);
                 if (snippetArgs.Count > 0) frame.Set("args", snippetArgs);
 
@@ -430,7 +442,7 @@ namespace Urc
                 if (SourceMap == null || SourceMap.Count < 2) return;
 
                 Console.Error.WriteLine("  combined from:");
-                foreach (var entry in SourceMap) Console.Error.WriteLine("    " + entry);
+                foreach (var span in SourceMap) Console.Error.WriteLine("    " + span);
             }
 
             private void PrintCompile(Json compile)
@@ -545,8 +557,28 @@ namespace Urc
         private sealed class Snippet
         {
             public string Code;
-            /// <summary>Which source each line range came from; only needed to explain a compile error.</summary>
-            public List<string> Map = new List<string>();
+            /// <summary>One entry per source, in the order they were combined.</summary>
+            public List<SourceSpan> Sources = new List<SourceSpan>();
+        }
+
+        /// <summary>
+        /// Where one source landed in the combined text.
+        ///
+        /// Two readers need this. Compiler diagnostics number lines in the COMBINED text, which is
+        /// meaningless to a caller who passed three files, so a compile failure prints the ranges.
+        /// And the editor window uses them to undo the concatenation for display.
+        /// </summary>
+        internal sealed class SourceSpan
+        {
+            public string Name;
+
+            /// <summary>1-based, in the combined text — the same numbering the compiler reports.</summary>
+            public int StartLine;
+            public int LineCount;
+
+            public int EndLine => StartLine + Math.Max(0, LineCount - 1);
+
+            public override string ToString() => $"{Name}: lines {StartLine}-{EndLine}";
         }
 
         private static Snippet ReadCode(Args args, out string error)
@@ -602,8 +634,12 @@ namespace Urc
                 var text = part.Value.Replace("\r\n", "\n").TrimEnd('\n');
                 var lines = text.Length == 0 ? 0 : text.Split('\n').Length;
 
-                if (parts.Count > 1)
-                    snippet.Map.Add($"{part.Key}: lines {line}-{line + Math.Max(0, lines - 1)}");
+                snippet.Sources.Add(new SourceSpan
+                {
+                    Name = part.Key,
+                    StartLine = line,
+                    LineCount = lines,
+                });
 
                 builder.Append(text).Append('\n');
                 line += lines;

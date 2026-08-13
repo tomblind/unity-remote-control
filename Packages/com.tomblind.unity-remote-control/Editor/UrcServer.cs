@@ -421,6 +421,7 @@ namespace Urc.Editor
             var job = UrcJob.Create(jobId, UrcProtocol.Op.Exec, connection.ClientPid);
             job.State = UrcJobState.Running;
             job.Detail = code;
+            job.Sources = request["sources"];
 
             // Registered before enqueueing, so a re-attach arriving while the job runs finds it.
             var handle = UrcJobs.Register(job);

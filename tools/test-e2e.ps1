@@ -153,6 +153,36 @@ Check 'multiple --file sources combine in order with --code last' {
     } finally { Stop-Fake $f }
 }
 
+# --- the line spans that let the editor window undo the concatenation -----------------------
+# The window's history is how a person sees what an agent ran, and a composed call arrives there
+# as one long concatenation. The CLI sends where each source landed so it can be split back
+# apart. Ranges must be exact: they are the same numbering compiler errors use, so an off-by-one
+# here misattributes a compile error to the wrong file.
+Check 'exec reports where each combined source landed' {
+    $f = Start-Fake @('--project', $projA, '--seconds', '14', '--exec-delay', '50')
+    try {
+        $one = Join-Path $env:TEMP 'urc-span-1.cs'
+        $two = Join-Path $env:TEMP 'urc-span-2.cs'
+        Set-Content $one -Encoding utf8 -Value @('int A1() { return 1; }', 'int A2() { return 2; }')
+        Set-Content $two -Encoding utf8 -Value @('int B1() { return 3; }')
+
+        $r = Invoke-Urc @('exec', '--file', $one, '--file', $two,
+                          '--code', 'return A1() + B1();', '--project', $projA)
+        Assert ($r.ExitCode -eq 0) "expected exit 0, got $($r.ExitCode): $($r.Output)"
+
+        # 2 lines, then 1 line, then --code: so lines 1-2, 3, and 4.
+        Assert ($r.Output -match [regex]::Escape('urc-span-1.cs:1+2')) "wrong span for file 1: $($r.Output)"
+        Assert ($r.Output -match [regex]::Escape('urc-span-2.cs:3+1')) "wrong span for file 2: $($r.Output)"
+        Assert ($r.Output -match [regex]::Escape('--code:4+1')) "wrong span for --code: $($r.Output)"
+
+        # A single source has nothing to split, so the field stays off the wire entirely rather
+        # than shipping a one-element list the window would have to special-case anyway.
+        $solo = Invoke-Urc @('exec', '--code', 'return 1;', '--project', $projA)
+        Assert ($solo.ExitCode -eq 0) "expected exit 0, got $($solo.ExitCode): $($solo.Output)"
+        Assert ($solo.Output -notmatch 'sources\[') "a lone source should send no spans: $($solo.Output)"
+    } finally { Stop-Fake $f }
+}
+
 # --- the one the whole design exists for ----------------------------------------------------
 Check 'exec survives a domain reload mid-job (reconnect + re-attach)' {
     $f = Start-Fake @('--project', $projA, '--seconds', '15', '--exec-delay', '600', '--reload-after', '200')

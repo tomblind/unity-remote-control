@@ -52,6 +52,15 @@ namespace Urc.Editor
             /// <summary>What came back, in full — the value, or the failure and its summary.</summary>
             public string Response;
 
+            /// <summary>
+            /// Line spans of <see cref="Request"/>, one per combined source. Null or empty when the
+            /// caller passed a single source.
+            ///
+            /// Note that <see cref="Request"/> is capped, so a span can point past the retained
+            /// text; whoever slices by these must clamp.
+            /// </summary>
+            public Json Sources;
+
             /// <summary>One-line prefix of the request, for the collapsed row.</summary>
             public string Summary => Flatten(Request, SummaryChars);
 
@@ -65,7 +74,8 @@ namespace Urc.Editor
                     .Set("generation", Generation)
                     .Set("clientPid", ClientPid)
                     .SetIf("request", Request)
-                    .SetIf("response", Response);
+                    .SetIf("response", Response)
+                    .SetIf("sources", Sources);
 
             public static Entry FromJson(Json json) => new Entry
             {
@@ -78,6 +88,7 @@ namespace Urc.Editor
                 ClientPid = json["clientPid"].AsInt(),
                 Request = json["request"].AsString(),
                 Response = json["response"].AsString(),
+                Sources = json["sources"],
             };
         }
 
@@ -96,6 +107,7 @@ namespace Urc.Editor
                 ClientPid = job.ClientPid,
                 Request = Cap(job.Detail),
                 Response = Cap(Describe(job)),
+                Sources = job.Sources,
             };
 
             var entries = Recent();

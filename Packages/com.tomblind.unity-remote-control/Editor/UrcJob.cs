@@ -61,6 +61,12 @@ namespace Urc.Editor
         /// </summary>
         [NonSerialized] public string Detail;
 
+        /// <summary>
+        /// How <see cref="Detail"/> was assembled, when the client combined several sources:
+        /// `[{name, line, lines}]`. Absent for a single source, where there is nothing to split.
+        /// </summary>
+        [NonSerialized] public Json Sources;
+
         public bool IsTerminal => State == UrcJobState.Done || State == UrcJobState.Interrupted;
 
         public static UrcJob Create(string id, string cmd, int clientPid) => new UrcJob

@@ -141,7 +141,12 @@ namespace Urc.Editor
             {
                 EditorGUILayout.LabelField("Recent requests", EditorStyles.boldLabel);
                 if (GUILayout.Button("Clear", EditorStyles.miniButton, GUILayout.Width(50)))
+                {
                     UrcHistory.Clear();
+                    _expanded.Clear();
+                    _expandedSources.Clear();
+                    _sliceCache.Clear();
+                }
             }
 
             // Measure the space left below this header. Repaint is the only event with real rects;
@@ -176,7 +181,16 @@ namespace Urc.Editor
                     if (GUILayout.Button(expanded ? "▼" : "▶", EditorStyles.label, GUILayout.Width(14)))
                     {
                         if (expanded) _expanded.Remove(entry.JobId);
-                        else _expanded.Add(entry.JobId);
+                        else
+                        {
+                            _expanded.Add(entry.JobId);
+
+                            // Open the last source by default. When sources were combined, the
+                            // trailing --code is what the agent actually invoked; the snippet files
+                            // above it are library text that is usually already familiar.
+                            var last = SourceCount(entry) - 1;
+                            if (last > 0) _expandedSources.Add(SourceKey(entry, last));
+                        }
                     }
 
                     EditorGUILayout.LabelField(Glyph(entry.Status), StatusStyle(entry.Status), GUILayout.Width(16));
@@ -192,11 +206,19 @@ namespace Urc.Editor
 
         private readonly HashSet<string> _expanded = new HashSet<string>();
 
+        /// <summary>Foldout state for individual sources, keyed by job id and source index.</summary>
+        private readonly HashSet<string> _expandedSources = new HashSet<string>();
+
+        private static string SourceKey(UrcHistory.Entry entry, int index) => entry.JobId + "#" + index;
+
+        private static int SourceCount(UrcHistory.Entry entry) =>
+            entry.Sources == null ? 0 : entry.Sources.Count;
+
         private void DrawExpanded(UrcHistory.Entry entry)
         {
             using (new EditorGUI.IndentLevelScope())
             {
-                DrawPane("Request", entry.Request);
+                DrawRequest(entry);
                 DrawPane("Response", entry.Response);
 
                 using (new EditorGUILayout.HorizontalScope())
@@ -209,13 +231,65 @@ namespace Urc.Editor
         }
 
         /// <summary>
-        /// A read-only, scrollable, selectable text pane with a copy button.
+        /// The request, split back into the sources the CLI combined.
         ///
-        /// TextArea rather than SelectableLabel because selection survives the repaint this window
-        /// does every tick — a SelectableLabel loses it, which makes manual selection impossible on
-        /// a live-updating window. The copy button exists for the same reason: it is the reliable
-        /// path when the text is long.
+        /// An agent composing three snippet files and a trailing --code arrives here as one long
+        /// concatenation, which is not something a person can scan — and being able to see what an
+        /// agent ran is the entire reason this window has a history. The CLI sends the line spans
+        /// alongside the code precisely so the concatenation can be undone here.
         /// </summary>
+        private void DrawRequest(UrcHistory.Entry entry)
+        {
+            // One source is already exactly what ran; splitting it would add a foldout around
+            // nothing. Same for an older entry recorded before spans were sent.
+            if (SourceCount(entry) < 2) { DrawPane("Request", entry.Request); return; }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField("Request", EditorStyles.miniBoldLabel, GUILayout.Width(70));
+                EditorGUILayout.LabelField($"{SourceCount(entry)} sources", EditorStyles.miniLabel);
+                if (GUILayout.Button("Copy all", EditorStyles.miniButton, GUILayout.Width(60)))
+                {
+                    EditorGUIUtility.systemCopyBuffer = entry.Request ?? "";
+                    ShowNotice("Request copied");
+                }
+            }
+
+            using (new EditorGUI.IndentLevelScope())
+            {
+                var index = 0;
+                foreach (var span in entry.Sources.Items)
+                {
+                    var key = SourceKey(entry, index);
+                    var open = _expandedSources.Contains(key);
+                    var count = span["lines"].AsInt();
+
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        if (GUILayout.Button(open ? "▼" : "▶", EditorStyles.label, GUILayout.Width(14)))
+                        {
+                            if (open) _expandedSources.Remove(key);
+                            else _expandedSources.Add(key);
+                        }
+
+                        EditorGUILayout.LabelField(FileName(span["name"].AsString("?")), EditorStyles.miniLabel);
+                        EditorGUILayout.LabelField($"{count} line{(count == 1 ? "" : "s")}",
+                            EditorStyles.miniLabel, GUILayout.Width(56));
+
+                        if (GUILayout.Button("Copy", EditorStyles.miniButton, GUILayout.Width(44)))
+                        {
+                            EditorGUIUtility.systemCopyBuffer = Slice(entry, span, index);
+                            ShowNotice("Snippet copied");
+                        }
+                    }
+
+                    if (open) DrawText(Slice(entry, span, index));
+                    index++;
+                }
+            }
+        }
+
+        /// <summary>A labelled pane with a copy button.</summary>
         private static void DrawPane(string label, string text)
         {
             var content = string.IsNullOrEmpty(text) ? "(empty)" : text;
@@ -230,12 +304,74 @@ namespace Urc.Editor
                 }
             }
 
+            DrawText(content);
+        }
+
+        /// <summary>
+        /// A read-only, selectable text block.
+        ///
+        /// TextArea rather than SelectableLabel because selection survives the repaint this window
+        /// does every tick — a SelectableLabel loses it, which makes manual selection impossible on
+        /// a live-updating window. The copy buttons exist for the same reason: they are the reliable
+        /// path when the text is long.
+        /// </summary>
+        private static void DrawText(string text)
+        {
+            var content = string.IsNullOrEmpty(text) ? "(empty)" : text;
+
             var lines = Mathf.Clamp(content.Split('\n').Length, 1, 12);
             var height = lines * EditorGUIUtility.singleLineHeight + 6;
 
             // Read-only by discarding the result: editable-looking text the user cannot actually
             // change would be worse than a pane that is obviously inert.
             EditorGUILayout.TextArea(content, MonoStyle, GUILayout.Height(height));
+        }
+
+        /// <summary>
+        /// One source's text, cut out of the combined request.
+        ///
+        /// Cached because this window repaints on every editor tick, and re-splitting the request
+        /// a hundred times a second to redraw a pane that cannot have changed is pure waste. A
+        /// history entry never mutates once recorded, so job id plus source index is a stable key.
+        /// </summary>
+        private readonly Dictionary<string, string> _sliceCache = new Dictionary<string, string>();
+
+        private string Slice(UrcHistory.Entry entry, Json span, int index)
+        {
+            var key = SourceKey(entry, index);
+            if (_sliceCache.TryGetValue(key, out var cached)) return cached;
+
+            var text = SliceLines(entry.Request, span["line"].AsInt(1), span["lines"].AsInt());
+
+            // Only expanded sources ever land here, but a long session should not accumulate
+            // without limit; dropping the lot is fine, it rebuilds on the next repaint.
+            if (_sliceCache.Count > 64) _sliceCache.Clear();
+
+            _sliceCache[key] = text;
+            return text;
+        }
+
+        private static string SliceLines(string text, int startLine, int lineCount)
+        {
+            if (string.IsNullOrEmpty(text) || lineCount <= 0) return "";
+
+            var lines = text.Replace("\r\n", "\n").Split('\n');
+            var from = Mathf.Clamp(startLine - 1, 0, lines.Length);
+
+            // The retained request is capped, so a span can point past what survived.
+            if (from >= lines.Length) return "(truncated — use Copy all)";
+
+            var to = Mathf.Min(from + lineCount, lines.Length);
+            return string.Join("\n", lines, from, to - from);
+        }
+
+        /// <summary>A full path eats the row; the file name is what identifies a snippet.</summary>
+        private static string FileName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "?";
+
+            var slash = name.LastIndexOfAny(new[] { '/', '\\' });
+            return slash >= 0 && slash < name.Length - 1 ? name.Substring(slash + 1) : name;
         }
 
         private static void ShowNotice(string message)

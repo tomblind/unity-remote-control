@@ -35,6 +35,8 @@ namespace Urc.FakeEditor
             public string ArgsEcho = "";
             /// <summary>First and last line of the received source, to assert how sources were combined.</summary>
             public string CodeEcho = "";
+            /// <summary>The source spans, so the editor window's per-snippet breakdown can be asserted.</summary>
+            public string SourcesEcho = "";
         }
 
         private static readonly ConcurrentDictionary<string, Job> Jobs = new ConcurrentDictionary<string, Job>();
@@ -231,6 +233,18 @@ namespace Urc.FakeEditor
             var lines = new System.Collections.Generic.List<string>();
             foreach (var l in code.Split('\n')) if (l.Trim().Length > 0) lines.Add(l.Trim());
             if (lines.Count > 0) job.CodeEcho = lines[0] + " .. " + lines[lines.Count - 1];
+
+            // The line spans that let the editor window undo the concatenation for display. Echoed
+            // as name:start+count so a test can check the ranges actually line up with the source.
+            var spans = new System.Collections.Generic.List<string>();
+            foreach (var span in request["sources"].Items)
+            {
+                var name = span["name"].AsString("?");
+                var slash = name.LastIndexOfAny(new[] { '/', '\\' });
+                if (slash >= 0 && slash < name.Length - 1) name = name.Substring(slash + 1);
+                spans.Add(name + ":" + span["line"].AsInt() + "+" + span["lines"].AsInt());
+            }
+            job.SourcesEcho = string.Join(",", spans.ToArray());
             _pendingJobId = jobId;
             _lastJobId = jobId;
             _state = UrcProtocol.State.Busy;
@@ -313,7 +327,8 @@ namespace Urc.FakeEditor
         {
             job.Value = Json.String("fake-result"
                 + (string.IsNullOrEmpty(job.ArgsEcho) ? "" : " args[" + job.ArgsEcho + "]")
-                + (string.IsNullOrEmpty(job.CodeEcho) ? "" : " code[" + job.CodeEcho + "]"));
+                + (string.IsNullOrEmpty(job.CodeEcho) ? "" : " code[" + job.CodeEcho + "]")
+                + (string.IsNullOrEmpty(job.SourcesEcho) ? "" : " sources[" + job.SourcesEcho + "]"));
             job.Done = true;
             _pendingJobId = null;
             _state = UrcProtocol.State.Idle;
