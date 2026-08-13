@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Urc.Discovery;
 using Urc.Protocol;
@@ -586,12 +587,12 @@ namespace Urc
             error = null;
 
             var parts = new List<KeyValuePair<string, string>>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var file in args.GetAll("file"))
             {
                 if (string.IsNullOrEmpty(file)) continue;
-                try { parts.Add(new KeyValuePair<string, string>(file, File.ReadAllText(file))); }
-                catch (Exception ex) { error = $"could not read '{file}': {ex.Message}"; return null; }
+                if (!AddFile(file, parts, seen, out error)) return null;
             }
 
             foreach (var positional in args.Positional)
@@ -608,6 +609,11 @@ namespace Urc
                             "  Try:  echo 'return 1;' | urc exec -";
                     return null;
                 }
+
+                // A piped snippet can require files too; with no file of its own to be relative to,
+                // its paths resolve against the working directory.
+                if (!AddRequired(piped, Directory.GetCurrentDirectory(), "<stdin>", parts, seen, out error))
+                    return null;
 
                 parts.Add(new KeyValuePair<string, string>("<stdin>", piped));
                 break;
@@ -647,6 +653,84 @@ namespace Urc
 
             snippet.Code = builder.ToString();
             return snippet;
+        }
+
+        /// <summary>
+        /// `//urc:require ./other.cs` — a snippet naming what it needs, so the caller does not have to.
+        ///
+        /// A line comment, anywhere in the file though conventionally at the top, and invisible to the
+        /// C# compiler either way. Quotes are optional and stripped, for paths containing spaces.
+        /// </summary>
+        private static readonly Regex RequireDirective = new Regex(
+            @"^[ \t]*//[ \t]*urc:require[ \t]+(?<path>\S.*?)[ \t]*$",
+            RegexOptions.Multiline | RegexOptions.Compiled);
+
+        /// <summary>
+        /// Reads a source and everything it requires, transitively, appending each exactly once.
+        ///
+        /// This exists because composing snippets by hand is a correctness problem, not a convenience
+        /// one: a snippet that calls a helper in another file compiles only if the caller remembered
+        /// to pass that file too, and forgetting produces a compile error at a line the caller did not
+        /// write. Declaring the dependency next to the code that has it moves that from something a
+        /// person must track per call to something the file states once.
+        ///
+        /// Requirements are appended BEFORE the file that asked for them. Order does not affect
+        /// resolution — every source lands in one compilation unit, so a method can call one declared
+        /// later — but a deterministic order keeps the combined text readable and lets the editor's
+        /// compiled-snippet cache hit when the same set is composed again.
+        /// </summary>
+        private static bool AddFile(string path, List<KeyValuePair<string, string>> parts,
+            HashSet<string> seen, out string error)
+        {
+            error = null;
+
+            string full;
+            try { full = Path.GetFullPath(path); }
+            catch (Exception ex) { error = $"bad path '{path}': {ex.Message}"; return false; }
+
+            // Already pulled in, whether named explicitly or reached through another file's
+            // requirement. Adding it twice would be a duplicate-definition error. Marking it before
+            // recursing is also what stops a cycle from recursing forever.
+            if (!seen.Add(full)) return true;
+
+            string text;
+            try { text = File.ReadAllText(full); }
+            catch (Exception ex) { error = $"could not read '{path}': {ex.Message}"; return false; }
+
+            if (!AddRequired(text, Path.GetDirectoryName(full), path, parts, seen, out error)) return false;
+
+            parts.Add(new KeyValuePair<string, string>(path, text));
+            return true;
+        }
+
+        /// <summary>Resolves one source's `//urc:require` lines, relative to the file that holds them.</summary>
+        private static bool AddRequired(string text, string baseDir, string requiredBy,
+            List<KeyValuePair<string, string>> parts, HashSet<string> seen, out string error)
+        {
+            error = null;
+
+            foreach (Match match in RequireDirective.Matches(text))
+            {
+                var required = match.Groups["path"].Value.Trim().Trim('"');
+                if (required.Length == 0) continue;
+
+                var resolved = Path.IsPathRooted(required)
+                    ? required
+                    : Path.Combine(baseDir ?? ".", required);
+
+                // Normalised so the '..' in a relative requirement does not reach the source map,
+                // and so two routes to the same file dedupe against each other.
+                try { resolved = Path.GetFullPath(resolved); } catch (Exception) { }
+
+                if (AddFile(resolved, parts, seen, out var inner)) continue;
+
+                // Name the file that asked, not just the one that is missing: with requirements
+                // chained a few deep, the missing path alone does not say where to fix it.
+                error = inner + $"\n  required by {requiredBy}";
+                return false;
+            }
+
+            return true;
         }
 
         private static TimeSpan ParseTimeout(string value, TimeSpan fallback)

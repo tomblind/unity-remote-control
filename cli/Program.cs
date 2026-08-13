@@ -97,6 +97,9 @@ EXEC
                       and --code can call them:
                         urc exec --file capture.cs --file report.cs
                                  --code 'return Report(Capture(1920));'
+                      A file can name its own dependencies with a line comment,
+                      resolved relative to it, transitively, and included once:
+                        //urc:require ./format.cs
   --arg name=value    A parameter, repeatable. Read with Arg/ArgInt/ArgFloat/
                       ArgBool/RequireArg — no using needed. Use it for STRINGS and
                       paths: a string literal inside --code must be valid C# and

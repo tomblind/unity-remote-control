@@ -102,6 +102,29 @@ Top-level methods are legal in a snippet, and `--arg` values are readable inside
 file is naturally a small library. If a compile fails, the error's line numbers refer to the
 combined text and `urc` prints which file each range came from.
 
+## A snippet declares what it needs
+
+When one snippet calls another, say so in the file rather than remembering it at every call site:
+
+```csharp
+// report.cs
+//urc:require ./format.cs
+string Report(string what) { return Format(what); }
+```
+
+```bash
+urc exec --file report.cs --code "return Report(Capture(1920));"   # format.cs comes too
+```
+
+Requirements resolve relative to the file holding them, apply transitively, and are included **once**
+however many files ask for them — so naming a file explicitly that something else also requires is
+safe, not a duplicate-definition error.
+
+Use it whenever a snippet calls a method it does not itself declare. It is a plain line comment, so
+the C# compiler never sees it, and it turns "the caller must remember to pass three files" into a
+fact the file states once. Without it, forgetting one produces a compile error on a line you did not
+write.
+
 ## One snippet, one job
 
 Prefer several short, focused snippets over one long snippet with flags choosing between paths. A

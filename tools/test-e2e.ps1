@@ -183,6 +183,55 @@ Check 'exec reports where each combined source landed' {
     } finally { Stop-Fake $f }
 }
 
+# --- a snippet declaring what it needs ------------------------------------------------------
+# Composing by hand is a correctness problem, not a convenience one: a snippet calling a helper in
+# another file compiles only if the caller remembered to pass that file too, and forgetting
+# produces a compile error at a line the caller never wrote. //urc:require moves that from
+# something tracked per call to something the file states once.
+Check 'a snippet pulls in the files it requires' {
+    $f = Start-Fake @('--project', $projA, '--seconds', '16', '--exec-delay', '50')
+    try {
+        $dir = Join-Path $env:TEMP 'urc-req'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        $leaf = Join-Path $dir 'leaf.cs'
+        $mid  = Join-Path $dir 'mid.cs'
+        $top  = Join-Path $dir 'top.cs'
+        Set-Content $leaf -Encoding utf8 -Value @('int Leaf() { return 1; }')
+        Set-Content $mid  -Encoding utf8 -Value @('//urc:require ./leaf.cs', 'int Mid() { return Leaf(); }')
+        Set-Content $top  -Encoding utf8 -Value @('// header comment', '//urc:require ./mid.cs', 'int Top() { return Mid(); }')
+
+        # Naming only the top file must drag in the whole chain, dependencies first.
+        $r = Invoke-Urc @('exec', '--file', $top, '--code', 'return Top();', '--project', $projA)
+        Assert ($r.ExitCode -eq 0) "expected exit 0, got $($r.ExitCode): $($r.Output)"
+        Assert ($r.Output -match 'leaf\.cs:1\+1') "leaf was not pulled in first: $($r.Output)"
+        Assert ($r.Output -match 'mid\.cs:2\+2') "mid is misplaced: $($r.Output)"
+        Assert ($r.Output -match 'top\.cs:4\+3') "top is misplaced: $($r.Output)"
+
+        # Naming a file that is ALSO required elsewhere must include it once - twice would be a
+        # duplicate-definition error, which is the failure this feature exists to prevent.
+        $dup = Invoke-Urc @('exec', '--file', $leaf, '--file', $top, '--code', 'return Top();', '--project', $projA)
+        Assert ($dup.ExitCode -eq 0) "expected exit 0, got $($dup.ExitCode): $($dup.Output)"
+        $leafCount = ([regex]::Matches($dup.Output, 'leaf\.cs:')).Count
+        Assert ($leafCount -eq 1) "leaf.cs appeared $leafCount times, expected once: $($dup.Output)"
+
+        # A cycle must terminate rather than recurse until the stack dies.
+        $a = Join-Path $dir 'cycA.cs'
+        $b = Join-Path $dir 'cycB.cs'
+        Set-Content $a -Encoding utf8 -Value @('//urc:require ./cycB.cs', 'int A() { return B(); }')
+        Set-Content $b -Encoding utf8 -Value @('//urc:require ./cycA.cs', 'int B() { return 2; }')
+        $cyc = Invoke-Urc @('exec', '--file', $a, '--code', 'return A();', '--project', $projA)
+        Assert ($cyc.ExitCode -eq 0) "a require cycle did not terminate cleanly: $($cyc.Output)"
+
+        # A missing requirement must name the file that asked for it, not just the missing path.
+        $bad = Join-Path $dir 'bad.cs'
+        Set-Content $bad -Encoding utf8 -Value @('//urc:require ./nope.cs', 'int Bad() { return 0; }')
+        $miss = Invoke-Urc @('exec', '--file', $bad, '--code', 'return Bad();', '--project', $projA)
+        Assert ($miss.ExitCode -ne 0) "a missing requirement was accepted silently"
+        Assert ($miss.Output -match 'nope\.cs') "the missing file is not named: $($miss.Output)"
+        Assert ($miss.Output -match 'required by') "the requiring file is not named: $($miss.Output)"
+    } finally { Stop-Fake $f }
+}
+
 # --- the one the whole design exists for ----------------------------------------------------
 Check 'exec survives a domain reload mid-job (reconnect + re-attach)' {
     $f = Start-Fake @('--project', $projA, '--seconds', '15', '--exec-delay', '600', '--reload-after', '200')
