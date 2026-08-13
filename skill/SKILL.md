@@ -28,14 +28,8 @@ urc exec --code 'return GameObject.Find("Player").transform.position.ToString();
 **Prefer documented helpers over exploring.** Don't reflection-scan or read source to discover an
 API when the project's own guidance names one.
 
-**Never split a batch to make a snippet cacheable.** Batching wins by far the larger margin: an
-extra call costs a whole conversation turn, while a fresh compile costs milliseconds. Combining
-operations into one snippet makes it unique, and that is fine.
-
-What keeps a composed batch cheap is where the *work* lives. Compile time scales with snippet size,
-so a batch that calls into project code stays fast even though it is unique — measured at ~76ms,
-the same as a cached snippet — while one that inlines sixty lines of logic costs ~350ms. Put the
-logic in the project and compose thin call lines.
+Batching means doing the steps of **one task** in one call. It does not mean building a
+general-purpose snippet that does several different jobs selected by flags — see below.
 
 ## Output budget
 
@@ -84,9 +78,23 @@ urc compile          # exit 0 = builds; exit 1 = errors, listed and deduplicated
 Errors are deduplicated: one missing type produces hundreds of call-site errors, so you see the
 *distinct* problems first. **A failed compile reloads nothing — the old code stays live.**
 
+## One snippet, one job
+
+Prefer several short, focused snippets over one long snippet with flags choosing between paths. A
+snippet that branches on `--arg mode=...` is the worst shape available: only one branch ever runs,
+the whole thing must still be read and approved by whoever is watching, and it is far easier to get
+subtly wrong than three small snippets each doing one thing.
+
+Keep them short. Compile time scales with snippet length — a handful of lines costs about 76ms,
+sixty lines about 350ms — so length is a real cost paid on every call, not just clutter.
+
+This does not conflict with batching. Batching is about not splitting **one** task across round
+trips; shortness is about not cramming **several** tasks into one snippet. A batch built from
+one-line calls into project code is both short and complete.
+
 ## Parameterise with `--arg`, never by building values into the source
 
-A reusable snippet takes its inputs beside the source, not inside it:
+A snippet takes its inputs beside the source, not inside it:
 
 ```bash
 urc exec --file screenshot.cs --arg width=1920 --arg path=C:/shots/a.png
@@ -103,16 +111,17 @@ Available inside every snippet, no `using` required:
 `Arg(name, fallback)` · `ArgInt` · `ArgLong` · `ArgFloat` · `ArgBool` · `RequireArg(name)` (throws if
 missing) · `HasArg(name)` · `Args` (the whole dictionary).
 
-**Do not interpolate values into the snippet text.** It looks simpler and costs more:
-
-- Quoting differs per shell, and anything with a slash or a quote has to survive two levels of it.
-- Every distinct value produces distinct source, so the snippet is recompiled on every call and each
-  compile leaks an assembly that cannot be freed until the next domain reload. Identical source is
-  what makes reuse possible at all.
+**Do not interpolate values into the snippet text.** Quoting differs per shell, and any value with a
+slash, a space, or a quote then has to survive two levels of escaping — the exact class of breakage
+that makes a skill work on one machine and not another. Passed as `--arg`, the value goes through
+argv untouched.
 
 `--arg` is repeatable, splits on the first `=` only (so values may contain more), and needs no
 quoting for slashes or spaces. `--args '<json object>'` takes the same parameters in one blob, but
 your shell may strip its quotes — prefer `--arg`.
+
+Use parameters for genuine inputs — a width, a path, a name. If a parameter is selecting *behaviour*,
+write a second snippet instead.
 
 ## Reusable operations belong in the project, not in a snippet
 
@@ -134,9 +143,9 @@ urc exec --code 'return ProjectTools.FindBrokenPrefabs();'
 `exec` references every assembly loaded in the editor, so project code is callable with no setup,
 and the compiler checks your arguments.
 
-This is also what makes batching cheap. A batch composed of one-line calls into project code is a
-small snippet, so it compiles in roughly the time a cached one takes to run — the heavy code was
-compiled once by Unity, not by Roslyn on every call.
+This is also what keeps snippets short. Logic that lives in the project is compiled once by Unity,
+so a snippet that calls it is a few lines rather than sixty — and stays cheap and readable however
+many times you compose it differently.
 
 ## Writing snippets
 

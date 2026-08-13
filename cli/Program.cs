@@ -81,11 +81,13 @@ EXEC
   urc exec --file snippet.cs --arg width=1920 --arg path=C:/shots/a.png
   cat snippet.cs | urc exec -
 
-  PARAMETERISE WITH --arg, NEVER by building values into the source. A snippet
-  that is byte-identical on every call can be compiled once and reused; one with
-  values baked in is a new compilation every time, and each leaks an assembly
-  that cannot be unloaded until the next domain reload. It also spares you two
-  levels of shell escaping.
+  PARAMETERISE WITH --arg, NEVER by building values into the source. Interpolated
+  values must survive two levels of shell escaping, which differs per platform and
+  breaks on slashes, spaces and quotes. As --arg they go through argv untouched.
+
+  ONE SNIPPET, ONE JOB. Prefer several short snippets to one long one that branches
+  on a mode flag: only one branch ever runs, all of it must still be read by
+  whoever approves the call, and compile time scales with length.
 
   --code <c#>         The snippet. Preferred for anything short: it shows a human
                       approving the call exactly what will run.
