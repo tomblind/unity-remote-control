@@ -117,33 +117,37 @@ This does not conflict with batching. Batching is about not splitting **one** ta
 trips; shortness is about not cramming **several** tasks into one snippet. A batch built from
 one-line calls into project code is both short and complete.
 
-## Parameterise with `--arg`, never by building values into the source
+## Passing values in
 
-A snippet takes its inputs beside the source, not inside it:
+**Numbers, booleans and enums: write them as C# in `--code`.** They are type-checked by the
+compiler, need no conversion, and read plainly in the approval prompt:
 
 ```bash
-urc exec --file screenshot.cs --arg width=1920 --arg path=C:/shots/a.png
+urc exec --file capture.cs --code "return Capture(1920, true);"
 ```
 
-```csharp
-// screenshot.cs — byte-identical on every call
-var width = ArgInt("width", 1280);
-var path  = Arg("path", "Temp/shot.png");
-var debug = ArgBool("debug");
+**Strings — especially paths: use `--arg`.** A string literal inside `--code` has to be valid C#
+*and* survive your shell, and the two disagree. This fails on PowerShell, because the quotes are
+stripped before `urc` ever sees them:
+
+```bash
+urc exec --file report.cs --code "return Report(\"C:/a b/c.png\");"   # CS1525
 ```
 
-Available inside every snippet, no `using` required:
+```bash
+urc exec --file report.cs --file main.cs --arg "path=C:/a b/c.png"    # works
+```
+
+`--arg` values travel through argv untouched, so slashes, spaces and quotes are safe. Read them with
 `Arg(name, fallback)` · `ArgInt` · `ArgLong` · `ArgFloat` · `ArgBool` · `RequireArg(name)` (throws if
-missing) · `HasArg(name)` · `Args` (the whole dictionary).
+missing) · `HasArg(name)` · `Args`. They work inside declared methods as well as at top level, and
+need no `using`.
 
-**Do not interpolate values into the snippet text.** Quoting differs per shell, and any value with a
-slash, a space, or a quote then has to survive two levels of escaping — the exact class of breakage
-that makes a skill work on one machine and not another. Passed as `--arg`, the value goes through
-argv untouched.
+`--arg` is repeatable and splits on the first `=` only, so values may contain more. `--args '<json>'`
+takes several at once but your shell may strip its quotes — prefer `--arg`.
 
-`--arg` is repeatable, splits on the first `=` only (so values may contain more), and needs no
-quoting for slashes or spaces. `--args '<json object>'` takes the same parameters in one blob, but
-your shell may strip its quotes — prefer `--arg`.
+Whichever you use, **never build the snippet body by string substitution.** That is the escaping
+problem with extra steps.
 
 Use parameters for genuine inputs — a width, a path, a name. If a parameter is selecting *behaviour*,
 write a second snippet instead.

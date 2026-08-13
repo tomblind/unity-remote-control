@@ -81,9 +81,10 @@ EXEC
   urc exec --file snippet.cs --arg width=1920 --arg path=C:/shots/a.png
   cat snippet.cs | urc exec -
 
-  PARAMETERISE WITH --arg, NEVER by building values into the source. Interpolated
-  values must survive two levels of shell escaping, which differs per platform and
-  breaks on slashes, spaces and quotes. As --arg they go through argv untouched.
+  PASSING VALUES: write numbers and bools as C# in --code, where the compiler
+  checks them. Use --arg for strings and paths — a string literal in --code has to
+  be valid C# AND survive the shell, and those disagree. Never build the snippet
+  body by string substitution; that is the escaping problem with extra steps.
 
   ONE SNIPPET, ONE JOB. Prefer several short snippets to one long one that branches
   on a mode flag: only one branch ever runs, all of it must still be read by
@@ -96,8 +97,11 @@ EXEC
                       and --code can call them:
                         urc exec --file capture.cs --file report.cs
                                  --code 'return Report(Capture(1920));'
-  --arg name=value    A parameter, repeatable. Read inside the snippet with
-                      Arg/ArgInt/ArgFloat/ArgBool/RequireArg — no using needed.
+  --arg name=value    A parameter, repeatable. Read with Arg/ArgInt/ArgFloat/
+                      ArgBool/RequireArg — no using needed. Use it for STRINGS and
+                      paths: a string literal inside --code must be valid C# and
+                      survive the shell, which PowerShell in particular breaks.
+                      Numbers and bools are simpler written straight into --code.
   --args <json>       The same, as one JSON object. --arg wins on conflict.
   --using <ns,ns>     Extra namespaces. Unambiguous ones are resolved automatically.
   --timeout <secs>    Bound the CLI's wait (default 120). Never aborts the job —
