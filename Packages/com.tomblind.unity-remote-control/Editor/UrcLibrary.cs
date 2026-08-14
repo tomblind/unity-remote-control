@@ -170,8 +170,9 @@ namespace Urc.Editor
 
         private static string Describe(IEnumerable<Diagnostic> diagnostics)
         {
-            var lines = diagnostics
-                .Where(d => d.Severity == DiagnosticSeverity.Error)
+            var errors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
+
+            var lines = errors
                 .Select(d =>
                 {
                     var span = d.Location.GetLineSpan();
@@ -182,7 +183,21 @@ namespace Urc.Editor
                 .Take(10)
                 .ToArray();
 
-            return string.Join("\n  ", lines);
+            var text = string.Join("\n  ", lines);
+
+            // An unresolved NAME is what an incomplete library looks like, and the compiler's
+            // wording for it ("does not exist in the current context") reads like a typo. It is far
+            // more often a --lib path that was not passed: the sources given are compiled as ONE
+            // assembly, so half a library is not valid on its own, and nothing in the file says
+            // which other path it needed.
+            if (errors.Any(d => d.Id == "CS0103" || d.Id == "CS0246"))
+            {
+                text += "\n  note: a library is compiled as ONE assembly and must be complete — if " +
+                        "that name lives in another --lib path, pass it too, or point --lib at the " +
+                        "whole tools directory.";
+            }
+
+            return text;
         }
     }
 }
