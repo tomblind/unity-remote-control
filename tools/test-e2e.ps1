@@ -262,6 +262,20 @@ Check 'exec --lib sends helper sources by value, in a stable order' {
         $bad = Invoke-Urc @('exec', '--project', $projA, '--lib', (Join-Path $dir 'nope'), '--code', 'return 1;')
         Assert ($bad.ExitCode -ne 0) "a missing --lib path was accepted silently"
         Assert ($bad.Output -match 'not found') "unhelpful error: $($bad.Output)"
+
+        # ORDER MUST NOT MATTER. Everything lands in one assembly and C# is order-independent, but
+        # the editor keys its cache on this content: without a canonical order the same library
+        # passed two ways compiles twice and leaves two identical assemblies resident, and a snippet
+        # reflecting over type names can then find the stale one.
+        $one = Join-Path $dir 'one'; $two = Join-Path $dir 'two'
+        New-Item -ItemType Directory -Force -Path $one, $two | Out-Null
+        Set-Content (Join-Path $one 'p.cs') -Encoding utf8 -Value @('namespace T { public static class P { public static int N() { return 1; } } }')
+        Set-Content (Join-Path $two 'q.cs') -Encoding utf8 -Value @('namespace T { public static class Q { public static int N() { return 2; } } }')
+
+        $fwd = Invoke-Urc @('exec', '--project', $projA, '--lib', $one, '--lib', $two, '--code', 'return 1;')
+        $rev = Invoke-Urc @('exec', '--project', $projA, '--lib', $two, '--lib', $one, '--code', 'return 1;')
+        Assert ($fwd.Output -match 'lib\[p\.cs,q\.cs\]') "forward order wrong: $($fwd.Output)"
+        Assert ($rev.Output -match 'lib\[p\.cs,q\.cs\]') "reversed flags produced a different library: $($rev.Output)"
     } finally { Stop-Fake $f }
 }
 

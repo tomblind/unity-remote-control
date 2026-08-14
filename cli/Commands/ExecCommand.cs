@@ -713,15 +713,12 @@ namespace Urc
                 {
                     if (Directory.Exists(path))
                     {
-                        var files = Directory.GetFiles(path, "*.cs", SearchOption.AllDirectories);
-                        Array.Sort(files, StringComparer.OrdinalIgnoreCase);
-
-                        foreach (var file in files)
-                            sources.Add(new KeyValuePair<string, string>(file, File.ReadAllText(file)));
+                        foreach (var file in Directory.GetFiles(path, "*.cs", SearchOption.AllDirectories))
+                            sources.Add(new KeyValuePair<string, string>(Path.GetFullPath(file), File.ReadAllText(file)));
                     }
                     else if (File.Exists(path))
                     {
-                        sources.Add(new KeyValuePair<string, string>(path, File.ReadAllText(path)));
+                        sources.Add(new KeyValuePair<string, string>(Path.GetFullPath(path), File.ReadAllText(path)));
                     }
                     else
                     {
@@ -735,6 +732,16 @@ namespace Urc
                     return null;
                 }
             }
+
+            // CANONICAL ORDER, over the whole set rather than per --lib. Every source ends up in one
+            // compilation, and C# does not care what order it sees declarations in — but the editor
+            // keys its cache on this content, so `--lib a --lib b` and `--lib b --lib a` would
+            // otherwise be two different libraries. Measured: the reversed order rebuilt (181ms
+            // against 65ms cached) and left a second, identical assembly resident, which a snippet
+            // reflecting over type names could then find instead of the current one.
+            //
+            // Full paths for the same reason: `./tools` and `tools` must not be two libraries.
+            sources.Sort((x, y) => StringComparer.OrdinalIgnoreCase.Compare(x.Key, y.Key));
 
             return sources;
         }
