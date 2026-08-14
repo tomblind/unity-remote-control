@@ -119,10 +119,10 @@ namespace Urc.Editor
                     MetadataReference.CreateFromImage(ImmutableArray.Create(image)));
 
                 // An empty root: it exists purely to be something to chain from, so it carries no
-                // declarations of its own. globalsType is set HERE because a chain binds globals at
-                // its root — that is what keeps --arg working inside a continuation (verified).
-                var root = CSharpScript.Create<object>("", options,
-                    globalsType: typeof(UrcGlobals), assemblyLoader: loader);
+                // declarations of its own. No globalsType — parameters reach snippets through
+                // `using static UrcGlobals`, which is what stops Roslyn file-referencing (and so
+                // locking) our own assembly. The import rides in with the base options.
+                var root = CSharpScript.Create<object>("", options, assemblyLoader: loader);
 
                 var rootErrors = root.Compile()
                     .Where(d => d.Severity == DiagnosticSeverity.Error)

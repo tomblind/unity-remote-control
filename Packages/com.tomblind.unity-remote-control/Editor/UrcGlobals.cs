@@ -7,8 +7,17 @@ namespace Urc.Editor
     /// <summary>
     /// Parameters passed to a snippet, in scope inside it.
     ///
-    /// Roslyn puts every member of the globals type directly in scope, so a snippet just writes
-    /// `ArgInt("width", 1280)` with no using, no declaration, and no ceremony.
+    /// STATIC, reached through `using static` rather than as a Roslyn globals object, and that is
+    /// not a style choice. Passing `globalsType:` makes Roslyn add its OWN reference to the type's
+    /// assembly, created FROM THE FILE — bypassing the in-memory referencing everything else goes
+    /// through, and memory-mapping Library/ScriptAssemblies/Urc.Editor.dll for the life of the
+    /// domain. Unity could then no longer overwrite it on a package update: the copy failed, the
+    /// editor silently kept running the old code, and only a restart cleared it.
+    ///
+    /// Measured, with controls: a fresh editor's dll is writable from another process and a SINGLE
+    /// exec locked it; Assembly.LoadFrom alone did NOT lock; the same assembly used as globalsType
+    /// DID; and reaching it statically with `using static` left it writable. The import is added in
+    /// UrcCodeRunner, so a snippet still just writes `ArgInt("width", 1280)`.
     ///
     /// WHY THIS EXISTS RATHER THAN STRING INTERPOLATION. Building values into the source seems
     /// simpler until you look at what it costs:
@@ -27,33 +36,41 @@ namespace Urc.Editor
     /// </summary>
     public sealed class UrcGlobals
     {
-        private readonly Dictionary<string, string> _args;
+        private static Dictionary<string, string> _args =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        public UrcGlobals(Dictionary<string, string> args)
+        /// <summary>
+        /// Installs the parameters for the run that is about to start. Safe as static state because
+        /// one job runs at a time, on the main thread — the server enforces that with the pending-job
+        /// check, so no two snippets can ever be between SetArgs and their own execution.
+        /// </summary>
+        internal static void SetArgs(Dictionary<string, string> args)
         {
             // Case-insensitive: --arg Width= and --arg width= should not be different parameters.
-            _args = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (args == null) return;
-            foreach (var pair in args) _args[pair.Key] = pair.Value;
+            var next = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (args != null)
+                foreach (var pair in args) next[pair.Key] = pair.Value;
+
+            _args = next;
         }
 
         /// <summary>Every parameter, for a snippet that wants to enumerate rather than ask.</summary>
-        public IReadOnlyDictionary<string, string> Args => _args;
+        public static IReadOnlyDictionary<string, string> Args => _args;
 
-        public bool HasArg(string name) => name != null && _args.ContainsKey(name);
+        public static bool HasArg(string name) => name != null && _args.ContainsKey(name);
 
-        public string Arg(string name, string fallback = null) =>
+        public static string Arg(string name, string fallback = null) =>
             name != null && _args.TryGetValue(name, out var value) ? value : fallback;
 
-        public int ArgInt(string name, int fallback = 0) =>
+        public static int ArgInt(string name, int fallback = 0) =>
             int.TryParse(Arg(name), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
                 ? value : fallback;
 
-        public long ArgLong(string name, long fallback = 0) =>
+        public static long ArgLong(string name, long fallback = 0) =>
             long.TryParse(Arg(name), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
                 ? value : fallback;
 
-        public float ArgFloat(string name, float fallback = 0) =>
+        public static float ArgFloat(string name, float fallback = 0) =>
             float.TryParse(Arg(name), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
                 ? value : fallback;
 
@@ -61,7 +78,7 @@ namespace Urc.Editor
         /// Accepts the spellings a shell actually produces — `--arg debug=true`, `=1`, `=yes`, `=on`
         /// — and treats a bare `--arg debug=` as true, since naming a flag at all signals intent.
         /// </summary>
-        public bool ArgBool(string name, bool fallback = false)
+        public static bool ArgBool(string name, bool fallback = false)
         {
             var raw = Arg(name);
             if (raw == null) return fallback;
@@ -79,7 +96,7 @@ namespace Urc.Editor
         /// Fails loudly for a parameter with no sensible default. Better than a silent fallback that
         /// makes a snippet quietly do the wrong thing to the project.
         /// </summary>
-        public string RequireArg(string name)
+        public static string RequireArg(string name)
         {
             var value = Arg(name);
             if (string.IsNullOrEmpty(value))

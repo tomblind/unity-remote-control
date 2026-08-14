@@ -37,6 +37,11 @@ namespace Urc.Editor
             "UnityEditor",
             "UnityEngine.SceneManagement",
             "UnityEditor.SceneManagement",
+
+            // A TYPE here means `using static`, which is how Arg/ArgInt/RequireArg stay in scope
+            // without a globals object. See UrcGlobals for why a globals object is not an option:
+            // it makes Roslyn file-reference our own assembly and blocks package updates.
+            "Urc.Editor.UrcGlobals",
         };
 
         private static ScriptOptions _baseOptions;
@@ -185,12 +190,9 @@ namespace Urc.Editor
                 // one, which measured 34ms against 225ms for a standalone submission — and that
                 // gap is almost independent of how much source is involved.
                 //
-                // globalsType is NOT passed here in the chained case: a chain binds globals at its
-                // root, which UrcLibrary already did, and continuations inherit them.
                 script = library != null
                     ? library.Root.ContinueWith<object>(code, options)
-                    : CSharpScript.Create<object>(code, options, globalsType: typeof(UrcGlobals),
-                        assemblyLoader: GetAssemblyLoader());
+                    : CSharpScript.Create<object>(code, options, assemblyLoader: GetAssemblyLoader());
             }
             catch (Exception ex)
             {
@@ -225,7 +227,11 @@ namespace Urc.Editor
         {
             try
             {
-                var state = await script.RunAsync(new UrcGlobals(args), catchException: null);
+                // Installed immediately before the run, not passed in: the parameters reach the
+                // snippet through `using static UrcGlobals`, so there is no globals object.
+                UrcGlobals.SetArgs(args);
+
+                var state = await script.RunAsync(catchException: null);
 
                 // A large top-level string spills in FULL to an artifact rather than being clipped:
                 // it is the documented escape hatch for "give me everything", so silently truncating
@@ -444,6 +450,7 @@ namespace Urc.Editor
                 Path.Combine(Application.dataPath, "..", "Library", "ScriptAssemblies"));
 
             var options = ScriptOptions.Default;
+            var loader = GetAssemblyLoader();
 
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
@@ -452,6 +459,18 @@ namespace Urc.Editor
                     if (assembly.IsDynamic || string.IsNullOrEmpty(assembly.Location)) continue;
 
                     var location = Path.GetFullPath(assembly.Location);
+
+                    // TELL ROSLYN THIS REFERENCE IS ALREADY LOADED, so it never resolves the
+                    // identity by opening the file. Without this, running a snippet left a handle on
+                    // Library/ScriptAssemblies dlls, and Unity could then no longer overwrite them:
+                    // the package's own assembly failed to be replaced with "Copying the file
+                    // failed", the domain silently kept running the OLD code, and only restarting
+                    // the editor cleared it. Measured: a fresh editor's Urc.Editor.dll is writable
+                    // from another process, and after a SINGLE exec it is locked.
+                    //
+                    // In-memory metadata (below) was never enough on its own — that governs how the
+                    // compiler reads the reference, not how the runtime binds it.
+                    loader.RegisterDependency(assembly);
 
                     if (location.StartsWith(scriptAssemblies, StringComparison.OrdinalIgnoreCase))
                     {

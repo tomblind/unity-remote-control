@@ -240,7 +240,11 @@ Check 'a snippet pulls in the files it requires' {
 Check 'exec --lib sends helper sources by value, in a stable order' {
     $f = Start-Fake @('--project', $projA, '--seconds', '14', '--exec-delay', '50')
     try {
+        # Rebuilt from scratch: a stray .cs left by an earlier run would silently join the library,
+        # which is exactly what a recursive scan is supposed to do and exactly what breaks the
+        # assertions below.
         $dir = Join-Path $env:TEMP 'urc-lib'
+        if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
         # Written in an order that does NOT match the sorted order, so sorting is actually tested.
         Set-Content (Join-Path $dir 'zebra.cs') -Encoding utf8 -Value @('namespace T { public static class Z { public static int N() { return 1; } } }')
@@ -267,7 +271,9 @@ Check 'exec --lib sends helper sources by value, in a stable order' {
         # the editor keys its cache on this content: without a canonical order the same library
         # passed two ways compiles twice and leaves two identical assemblies resident, and a snippet
         # reflecting over type names can then find the stale one.
-        $one = Join-Path $dir 'one'; $two = Join-Path $dir 'two'
+        # Siblings, NOT children of $dir: --lib scans a directory recursively, so nesting these
+        # inside it would make them part of the earlier library and break that assertion.
+        $one = Join-Path $env:TEMP 'urc-lib-order-one'; $two = Join-Path $env:TEMP 'urc-lib-order-two'
         New-Item -ItemType Directory -Force -Path $one, $two | Out-Null
         Set-Content (Join-Path $one 'p.cs') -Encoding utf8 -Value @('namespace T { public static class P { public static int N() { return 1; } } }')
         Set-Content (Join-Path $two 'q.cs') -Encoding utf8 -Value @('namespace T { public static class Q { public static int N() { return 2; } } }')
