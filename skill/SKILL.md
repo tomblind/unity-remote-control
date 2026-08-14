@@ -231,6 +231,13 @@ namespace HkTools
 This inverts the "one job per file" rule above, which applies to `--file` snippets recompiled on
 every call. A library is compiled once, so **a big one is fine** — group it however reads best.
 
+**Pass the same `--lib` set every time**, normally a single directory covering the whole collection.
+Flag order and relative paths do not matter, but the *set* does: a subset is a different library, so
+it compiles again and leaves a second copy resident. It may not even compile — everything in a
+library shares one assembly and its files reference each other freely, so half of one is not
+necessarily valid on its own. Several `--lib` paths are fine; they merge into that single assembly,
+which also means two files in it cannot declare the same type.
+
 ## Reusable operations belong in the project, not in a snippet
 
 Don't paste a large snippet repeatedly. Put the logic in an ordinary static class in the project
