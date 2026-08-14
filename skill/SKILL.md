@@ -127,17 +127,31 @@ write.
 
 ## One snippet, one job
 
-Prefer several short, focused snippets over one long snippet with flags choosing between paths. A
-snippet that branches on `--arg mode=...` is the worst shape available: only one branch ever runs,
-the whole thing must still be read and approved by whoever is watching, and it is far easier to get
-subtly wrong than three small snippets each doing one thing — which you can now combine per task
-anyway.
+Two shapes to avoid. Both make one snippet answer for several jobs.
 
-Keep them short. Compile time scales with snippet length — a handful of lines costs about 76ms,
-sixty lines about 350ms — so length is a real cost paid on every call, not just clutter.
+**Branching on a mode flag.** A snippet that switches on `--arg mode=...` is the worst shape
+available: only one branch ever runs, the whole thing must still be read and approved by whoever is
+watching, and it is far easier to get subtly wrong than three small snippets each doing one thing.
+
+**Collecting related methods into one file.** A file is the *unit of inclusion* — `--file` and
+`//urc:require` pull all of it, always. Ten scene helpers in one `scene.cs` means every task needing
+any one of them compiles all ten and shows all ten to whoever approves the call, and no other
+snippet can require just the one it wants.
+
+Group by **what is used together**, not by what is about the same topic. Topic is the header-file
+instinct and it is the wrong axis here. Several methods belong in one file when they are always used
+together — a helper and its only caller — not when they merely concern the same subject.
+
+If you find yourself with a set of related operations, that is the signal to put them in the project
+as an ordinary static class (see below), not to grow a snippet file. Unity compiles that once;
+snippets recompile per call.
+
+Length itself is a mild cost: a unique snippet pays roughly 140ms to compile regardless of size, plus
+about 1ms per line. What compounds is inclusion — a fat file is paid for by every task that touches
+any part of it, in compile time and in what a person has to read to approve it.
 
 This does not conflict with batching. Batching is about not splitting **one** task across round
-trips; shortness is about not cramming **several** tasks into one snippet. A batch built from
+trips; this is about not cramming **several** into one snippet or one file. A batch built from
 one-line calls into project code is both short and complete.
 
 ## Passing values in

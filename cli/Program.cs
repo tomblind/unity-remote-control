@@ -86,9 +86,12 @@ EXEC
   be valid C# AND survive the shell, and those disagree. Never build the snippet
   body by string substitution; that is the escaping problem with extra steps.
 
-  ONE SNIPPET, ONE JOB. Prefer several short snippets to one long one that branches
-  on a mode flag: only one branch ever runs, all of it must still be read by
-  whoever approves the call, and compile time scales with length.
+  ONE SNIPPET, ONE JOB. Avoid a snippet that branches on a mode flag: only one
+  branch ever runs and all of it must still be read by whoever approves the call.
+  Avoid collecting related methods into one file too — a file is the unit of
+  inclusion, so --file and //urc:require pull all of it and every task needing one
+  method pays for all of them. Group by what is used TOGETHER, not by topic; a set
+  of related operations belongs in the project as a static class.
 
   --code <c#>         The snippet. Preferred for anything short: it shows a human
                       approving the call exactly what will run.
