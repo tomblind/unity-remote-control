@@ -232,6 +232,39 @@ Check 'a snippet pulls in the files it requires' {
     } finally { Stop-Fake $f }
 }
 
+# --- the resident helper library ------------------------------------------------------------
+# --lib travels by VALUE rather than as paths, because the editor keys its cache on the content:
+# that is what makes an edit rebuild on the next call with no domain reload, and an unchanged
+# library free. Directory order must be sorted, or an unstable order would look like a different
+# library every call and rebuild each time.
+Check 'exec --lib sends helper sources by value, in a stable order' {
+    $f = Start-Fake @('--project', $projA, '--seconds', '14', '--exec-delay', '50')
+    try {
+        $dir = Join-Path $env:TEMP 'urc-lib'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        # Written in an order that does NOT match the sorted order, so sorting is actually tested.
+        Set-Content (Join-Path $dir 'zebra.cs') -Encoding utf8 -Value @('namespace T { public static class Z { public static int N() { return 1; } } }')
+        Set-Content (Join-Path $dir 'alpha.cs') -Encoding utf8 -Value @('namespace T { public static class A { public static int N() { return 2; } } }')
+
+        $r = Invoke-Urc @('exec', '--project', $projA, '--lib', $dir, '--code', 'return T.A.N();')
+        Assert ($r.ExitCode -eq 0) "expected exit 0, got $($r.ExitCode): $($r.Output)"
+        Assert ($r.Output -match 'lib\[alpha\.cs,zebra\.cs\]') "library missing or unsorted: $($r.Output)"
+
+        # A single file works too, and no --lib must send no library at all.
+        $one = Invoke-Urc @('exec', '--project', $projA, '--lib', (Join-Path $dir 'alpha.cs'), '--code', 'return 1;')
+        Assert ($one.Output -match 'lib\[alpha\.cs\]') "single-file --lib failed: $($one.Output)"
+
+        $none = Invoke-Urc @('exec', '--project', $projA, '--code', 'return 1;')
+        Assert ($none.Output -notmatch 'lib\[') "a library was sent when none was asked for: $($none.Output)"
+
+        # A bad path must fail loudly rather than silently running without the helpers, which
+        # would surface as a baffling "method does not exist" from the snippet.
+        $bad = Invoke-Urc @('exec', '--project', $projA, '--lib', (Join-Path $dir 'nope'), '--code', 'return 1;')
+        Assert ($bad.ExitCode -ne 0) "a missing --lib path was accepted silently"
+        Assert ($bad.Output -match 'not found') "unhelpful error: $($bad.Output)"
+    } finally { Stop-Fake $f }
+}
+
 # --- the one the whole design exists for ----------------------------------------------------
 Check 'exec survives a domain reload mid-job (reconnect + re-attach)' {
     $f = Start-Fake @('--project', $projA, '--seconds', '15', '--exec-delay', '600', '--reload-after', '200')

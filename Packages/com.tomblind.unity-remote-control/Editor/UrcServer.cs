@@ -418,6 +418,16 @@ namespace Urc.Editor
             foreach (var field in request["args"].Fields)
                 snippetArgs[field.Key] = field.Value.AsString("");
 
+            // A caller-supplied helper library, compiled to a real assembly and kept resident for the
+            // domain. Parsed here on the connection thread — it is only JSON, no Unity API — and
+            // built on the main thread below, where Roslyn runs.
+            var librarySources = new List<KeyValuePair<string, string>>();
+            foreach (var item in request["lib"].Items)
+            {
+                librarySources.Add(new KeyValuePair<string, string>(
+                    item["name"].AsString("?"), item["code"].AsString("")));
+            }
+
             var job = UrcJob.Create(jobId, UrcProtocol.Op.Exec, connection.ClientPid);
             job.State = UrcJobState.Running;
             job.Detail = code;
@@ -447,9 +457,23 @@ namespace Urc.Editor
 
                 try
                 {
-                    var run = await UrcCodeRunner.RunAsync(code, usings, snippetArgs);
-                    job.Complete(run.Status, run.Summary, run.Value);
-                    job.ValueArtifact = run.ValueArtifact;
+                    // Reported as its own failure rather than folded into the snippet's: a broken
+                    // helper is a fault in the library, at a line in the library's own file, and
+                    // saying "your snippet failed" would send the caller to the wrong place.
+                    UrcLibrary.Handle library = null;
+                    if (librarySources.Count > 0 && !UrcLibrary.TryGetOrBuild(
+                            librarySources, UrcCodeRunner.BaseOptions, UrcCodeRunner.Loader,
+                            out library, out var libraryError))
+                    {
+                        job.Complete(UrcProtocol.Status.Failed,
+                            "the --lib library failed to compile:\n  " + libraryError, null);
+                    }
+                    else
+                    {
+                        var run = await UrcCodeRunner.RunAsync(code, usings, snippetArgs, library);
+                        job.Complete(run.Status, run.Summary, run.Value);
+                        job.ValueArtifact = run.ValueArtifact;
+                    }
                 }
                 catch (Exception ex)
                 {

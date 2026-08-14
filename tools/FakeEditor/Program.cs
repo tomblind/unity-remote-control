@@ -37,6 +37,8 @@ namespace Urc.FakeEditor
             public string CodeEcho = "";
             /// <summary>The source spans, so the editor window's per-snippet breakdown can be asserted.</summary>
             public string SourcesEcho = "";
+            /// <summary>Library file names in the order sent, so --lib ordering can be asserted.</summary>
+            public string LibEcho = "";
         }
 
         private static readonly ConcurrentDictionary<string, Job> Jobs = new ConcurrentDictionary<string, Job>();
@@ -245,6 +247,18 @@ namespace Urc.FakeEditor
                 spans.Add(name + ":" + span["line"].AsInt() + "+" + span["lines"].AsInt());
             }
             job.SourcesEcho = string.Join(",", spans.ToArray());
+
+            // Helper library, echoed by file name in the order received - the editor keys its cache
+            // on this content, so the order has to be stable across calls.
+            var libNames = new System.Collections.Generic.List<string>();
+            foreach (var source in request["lib"].Items)
+            {
+                var name = source["name"].AsString("?");
+                var cut = name.LastIndexOfAny(new[] { '/', '\\' });
+                if (cut >= 0 && cut < name.Length - 1) name = name.Substring(cut + 1);
+                libNames.Add(name);
+            }
+            job.LibEcho = string.Join(",", libNames.ToArray());
             _pendingJobId = jobId;
             _lastJobId = jobId;
             _state = UrcProtocol.State.Busy;
@@ -328,7 +342,8 @@ namespace Urc.FakeEditor
             job.Value = Json.String("fake-result"
                 + (string.IsNullOrEmpty(job.ArgsEcho) ? "" : " args[" + job.ArgsEcho + "]")
                 + (string.IsNullOrEmpty(job.CodeEcho) ? "" : " code[" + job.CodeEcho + "]")
-                + (string.IsNullOrEmpty(job.SourcesEcho) ? "" : " sources[" + job.SourcesEcho + "]"));
+                + (string.IsNullOrEmpty(job.SourcesEcho) ? "" : " sources[" + job.SourcesEcho + "]")
+                + (string.IsNullOrEmpty(job.LibEcho) ? "" : " lib[" + job.LibEcho + "]"));
             job.Done = true;
             _pendingJobId = null;
             _state = UrcProtocol.State.Idle;

@@ -103,6 +103,13 @@ EXEC
                       A file can name its own dependencies with a line comment,
                       resolved relative to it, transitively, and included once:
                         //urc:require ./format.cs
+  --lib <path>        A helper collection - a file, or a directory of .cs - compiled
+                      into a real assembly ONCE per editor session and kept resident.
+                      Ordinary C#: namespaces, classes, extension methods. Snippets
+                      then call it and compile ~6x faster, because each becomes a
+                      continuation of the library rather than a fresh compilation.
+                      Repeatable. Rebuilds when the content changes, with no domain
+                      reload. Nothing is written to the project. Also $URC_LIB.
   --arg name=value    A parameter, repeatable. Read with Arg/ArgInt/ArgFloat/
                       ArgBool/RequireArg — no using needed. Use it for STRINGS and
                       paths: a string literal inside --code must be valid C# and

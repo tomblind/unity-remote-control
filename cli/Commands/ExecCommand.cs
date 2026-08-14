@@ -26,6 +26,9 @@ namespace Urc
             var snippet = ReadCode(args, out var codeError);
             if (snippet == null) { Program.Error(codeError); return ExitCode.Usage; }
 
+            var library = ReadLibrary(args, out var libError);
+            if (library == null) { Program.Error(libError); return ExitCode.Usage; }
+
             var project = ProjectResolver.Resolve(args.Get("project"), out _);
             var timeout = ParseTimeout(args.Get("timeout"), TimeSpan.FromSeconds(120));
 
@@ -50,7 +53,8 @@ namespace Urc
 
             return new Session(editor, jobId, snippet.Code, usings, timeout, args)
             {
-                SourceMap = snippet.Sources
+                SourceMap = snippet.Sources,
+                Library = library
             }.Run();
         }
 
@@ -149,6 +153,9 @@ namespace Urc
 
             /// <summary>Where each source landed in the combined text. See <see cref="SourceSpan"/>.</summary>
             public List<SourceSpan> SourceMap;
+
+            /// <summary>Helper sources for `--lib`, sent as name/code pairs. Empty when unused.</summary>
+            public List<KeyValuePair<string, string>> Library;
 
             public Session(DiscoveryReply editor, string jobId, string code, List<string> usings,
                 TimeSpan timeout, Args args)
@@ -289,6 +296,22 @@ namespace Urc
                         .Set("protocol", UrcProtocol.Version));
 
                 if (_args.Has("no-settle")) frame.Set("noSettle", true);
+
+                // The library travels by VALUE, not as paths for the editor to read. The two
+                // processes need not share a working directory, and sending content means the
+                // editor's cache key is the content itself — so an edit rebuilds on the next call
+                // and an unchanged library is free, with nothing to invalidate or watch.
+                if (Library != null && Library.Count > 0)
+                {
+                    var lib = Json.Array();
+                    foreach (var source in Library)
+                    {
+                        lib.Add(Json.Object()
+                            .Set("name", source.Key)
+                            .Set("code", source.Value));
+                    }
+                    frame.Set("lib", lib);
+                }
 
                 // Sent only when several sources were combined. The editor window uses these to
                 // split the request back into one foldout per snippet — a 200-line concatenation of
@@ -653,6 +676,67 @@ namespace Urc
 
             snippet.Code = builder.ToString();
             return snippet;
+        }
+
+        /// <summary>
+        /// Collects `--lib` sources: a helper collection the editor compiles into a real assembly
+        /// once and keeps resident, so snippets can call it without carrying it.
+        ///
+        /// Accepts a file or a directory (scanned recursively for .cs). Directory order is sorted by
+        /// full path — the editor keys its cache on this content, so an unstable order would look
+        /// like a different library on every call and rebuild each time.
+        ///
+        /// Unlike `--file`, these are NOT `//urc:require`-expanded: a library is ordinary C#
+        /// compiled as a unit, so every file in it already sees every other.
+        ///
+        /// Returns null only on a read error; an empty list simply means no library.
+        /// </summary>
+        private static List<KeyValuePair<string, string>> ReadLibrary(Args args, out string error)
+        {
+            error = null;
+            var sources = new List<KeyValuePair<string, string>>();
+
+            var paths = new List<string>(args.GetAll("lib"));
+
+            // Mirrors --project/$URC_PROJECT: usable without repeating the flag, but the flag wins.
+            if (paths.Count == 0)
+            {
+                var fromEnv = Environment.GetEnvironmentVariable("URC_LIB");
+                if (!string.IsNullOrWhiteSpace(fromEnv)) paths.Add(fromEnv);
+            }
+
+            foreach (var path in paths)
+            {
+                if (string.IsNullOrEmpty(path)) continue;
+
+                try
+                {
+                    if (Directory.Exists(path))
+                    {
+                        var files = Directory.GetFiles(path, "*.cs", SearchOption.AllDirectories);
+                        Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+
+                        foreach (var file in files)
+                            sources.Add(new KeyValuePair<string, string>(file, File.ReadAllText(file)));
+                    }
+                    else if (File.Exists(path))
+                    {
+                        sources.Add(new KeyValuePair<string, string>(path, File.ReadAllText(path)));
+                    }
+                    else
+                    {
+                        error = $"--lib path not found: {path}";
+                        return null;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    error = $"could not read --lib '{path}': {ex.Message}";
+                    return null;
+                }
+            }
+
+            return sources;
         }
 
         /// <summary>
