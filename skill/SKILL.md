@@ -118,7 +118,12 @@ urc exec --file report.cs --code "return Report(Capture(1920));"   # format.cs c
 
 Requirements resolve relative to the file holding them, apply transitively, and are included **once**
 however many files ask for them — so naming a file explicitly that something else also requires is
-safe, not a duplicate-definition error.
+safe, not a duplicate-definition error. `--file` is therefore only for **entry points**: the snippets
+your `--code` calls directly. Anything reached through a require comes along by itself.
+
+The directive works in snippet files and in a piped snippet, not in `--code` — text there is taken
+literally, so a require written inline is an inert comment and the method it meant to bring in will
+simply be undefined.
 
 Use it whenever a snippet calls a method it does not itself declare. It is a plain line comment, so
 the C# compiler never sees it, and it turns "the caller must remember to pass three files" into a
