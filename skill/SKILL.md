@@ -194,6 +194,43 @@ problem with extra steps.
 Use parameters for genuine inputs — a width, a path, a name. If a parameter is selecting *behaviour*,
 write a second snippet instead.
 
+## A helper library: `--lib`
+
+Once you have more than a handful of reusable helpers, stop shipping them as snippets and pass them
+as a library:
+
+```bash
+urc exec --lib .claude/skills/<name>/tools --code 'return HkTools.Scene.Summary();'
+```
+
+`--lib` takes a file or a directory of `.cs`. The editor compiles it into a **real assembly once per
+editor session** and keeps it resident; your snippet then becomes a continuation of it rather than a
+fresh compilation, which roughly halves a call. Nothing is written to the project, so a library
+cannot break the project's build.
+
+It is **ordinary C#**, not snippet source — real namespaces, classes, extension methods, everything:
+
+```csharp
+namespace HkTools
+{
+    public static class Scene
+    {
+        public static string Summary() { /* ... */ }
+    }
+}
+```
+
+- **Fully qualify the call**, or pass `--using HkTools`. An extension method *requires* the using —
+  a fully-qualified name will not bring it into scope — and an unqualified name pays a resolution
+  pass that costs more than the library saves.
+- **Edit a helper and just call again.** The library is keyed on its content, so the next call
+  rebuilds it (~200ms once) with **no domain reload**. Nothing to compile, nothing to invalidate.
+- **A broken helper fails only the call that named it**, reporting the library's own file and line —
+  the editor and the project build are untouched.
+
+This inverts the "one job per file" rule above, which applies to `--file` snippets recompiled on
+every call. A library is compiled once, so **a big one is fine** — group it however reads best.
+
 ## Reusable operations belong in the project, not in a snippet
 
 Don't paste a large snippet repeatedly. Put the logic in an ordinary static class in the project
@@ -213,6 +250,10 @@ urc exec --code 'return ProjectTools.FindBrokenPrefabs();'
 
 `exec` references every assembly loaded in the editor, so project code is callable with no setup,
 and the compiler checks your arguments.
+
+Use the project for logic that belongs to the project and is worth committing for everyone; use
+`--lib` for your own tooling, which needs no place in the project tree and no domain reload to
+change.
 
 This is also what keeps snippets short. Logic that lives in the project is compiled once by Unity,
 so a snippet that calls it is a few lines rather than sixty — and stays cheap and readable however

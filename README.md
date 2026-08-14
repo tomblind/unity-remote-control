@@ -45,6 +45,7 @@ with `dotnet publish cli/Urc.csproj -r win-x64 -c Release`.
 | `urc exec --file s.cs --arg w=1920` | Parameters beside the source, so no shell escaping |
 | `urc exec --file a.cs --file b.cs --code 'A(); return B();'` | Compose snippet files in one call |
 | `//urc:require ./other.cs` | A snippet names its own dependencies, pulled in transitively |
+| `urc exec --lib tools/ --code '...'` | Compile a helper library once per session; snippets chain off it |
 | `urc compile` | Tell Unity files changed; exit 0 only if the project builds |
 | `urc status [--all]` | Editor state, generation, pending job |
 | `urc logs [--since \| --errors \| --tail]` | Captured console, read straight off disk |

@@ -106,10 +106,12 @@ EXEC
   --lib <path>        A helper collection - a file, or a directory of .cs - compiled
                       into a real assembly ONCE per editor session and kept resident.
                       Ordinary C#: namespaces, classes, extension methods. Snippets
-                      then call it and compile ~6x faster, because each becomes a
-                      continuation of the library rather than a fresh compilation.
-                      Repeatable. Rebuilds when the content changes, with no domain
-                      reload. Nothing is written to the project. Also $URC_LIB.
+                      become continuations of it instead of fresh compilations,
+                      which roughly halves a call (43ms against 80ms, measured).
+                      Fully qualify calls, or pass --using: an extension method
+                      REQUIRES the using, and an unqualified name pays a resolution
+                      pass. Repeatable. Rebuilds when the content changes, with no
+                      domain reload. Nothing is written to the project. Also $URC_LIB.
   --arg name=value    A parameter, repeatable. Read with Arg/ArgInt/ArgFloat/
                       ArgBool/RequireArg — no using needed. Use it for STRINGS and
                       paths: a string literal inside --code must be valid C# and
